@@ -11,6 +11,50 @@ class LLMGenerationError(RuntimeError):
     """Raised when an Ollama-backed LLM response cannot be parsed."""
 
 
+_CHAIN_SCHEMA = {
+    "type": "object",
+    "required": ["meta", "global", "input", "output", "blocks"],
+    "additionalProperties": False,
+    "properties": {
+        "meta": {
+            "type": "object",
+            "required": ["name"],
+            "properties": {
+                "name": {"type": "string"},
+                "author": {"type": "string"},
+                "description": {"type": "string"},
+            },
+        },
+        "global": {"type": "object"},
+        "input": {
+            "type": "object",
+            "required": ["@model"],
+            "properties": {"@model": {"type": "string"}, "@input": {"type": "integer"}},
+        },
+        "output": {
+            "type": "object",
+            "required": ["@model"],
+            "properties": {"@model": {"type": "string"}, "@output": {"type": "integer"}},
+        },
+        "blocks": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+                "type": "object",
+                "required": ["model"],
+                "properties": {
+                    "model": {"type": "string"},
+                    "path": {"type": "integer"},
+                    "position": {"type": "integer"},
+                    "type": {"type": "integer"},
+                    "parameters": {"type": "object"},
+                },
+            },
+        },
+    },
+}
+
+
 _EXAMPLE_CHAIN = {
     "meta": {"name": "Example Tone", "author": "Ollama"},
     "global": {"@tempo": 120.0},
@@ -56,18 +100,21 @@ def generate_chain_from_prompt(
 def _compose_prompt(user_prompt: str, catalog: ModelCatalog) -> str:
     models_summary = _summarize_catalog(catalog)
     example_json = json.dumps(_EXAMPLE_CHAIN, indent=2)
+    schema_json = json.dumps(_CHAIN_SCHEMA, indent=2)
     instructions = (
         "You are a tone designer that builds signal chains for the Line 6 Helix. "
         "Return a single JSON object compatible with hlxgen. The object must include "
         "the top-level keys 'meta', 'global', 'input', 'output', and 'blocks'. "
         "The 'blocks' array must contain entries whose 'model' value comes from the "
-        "available models list provided below. When unsure about parameter values, "
-        "omit them to fall back to dataset defaults. Do not include markdown fences "
-        "or commentary—output strictly JSON."
+        "available models list provided below. The JSON must validate against the "
+        "exact schema provided. When unsure about parameter values, omit them to fall "
+        "back to dataset defaults. Do not include markdown fences or commentary—output "
+        "strictly JSON."
     )
     summary_text = json.dumps(models_summary, indent=2)
     return (
         f"{instructions}\n\n"
+        f"Required JSON schema:\n{schema_json}\n\n"
         f"Example chain structure:\n{example_json}\n\n"
         f"Available models (display_name, internal_name, category, parameters):\n{summary_text}\n\n"
         f"User goal: {user_prompt.strip()}\n"
