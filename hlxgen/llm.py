@@ -140,19 +140,55 @@ def _summarize_catalog(catalog: ModelCatalog) -> list[dict[str, Any]]:
                 "display_name": model.display_name,
                 "internal_name": model.internal_name,
                 "category": model.category or "",
-                "parameters": _parameter_sample(model),
+                "based_on": model.based_on or "",
+                "parameters": _parameter_details(model),
             }
         )
     return summary
 
 
-def _parameter_sample(model: ModelDefinition) -> list[str]:
-    names = [name for name in model.parameters.keys() if not name.startswith("@")]
-    names.sort()
-    if len(names) > 12:
-        names = names[:12]
-        names.append("…")
-    return names
+def _parameter_details(model: ModelDefinition) -> dict[str, dict[str, Any]]:
+    details: dict[str, dict[str, Any]] = {}
+    for name in sorted(model.parameters.keys()):
+        param = model.parameters[name]
+        info: dict[str, Any] = {}
+        if param.value_type is not None:
+            info["value_type"] = param.value_type
+        if param.display_type:
+            info["display_type"] = param.display_type
+        if param.min_value is not None:
+            info["min"] = param.min_value
+        if param.max_value is not None:
+            info["max"] = param.max_value
+        default = param.default
+        if default is None:
+            default = param.default_value()
+        if default is not None:
+            info["default"] = default
+        if param.forward_map:
+            info["options"] = dict(param.forward_map)
+        if param.reverse_map and param.reverse_map != param.forward_map:
+            info["labels"] = dict(param.reverse_map)
+        extra_keys = {
+            key: value
+            for key, value in param.raw.items()
+            if key
+            not in {
+                "parameter",
+                "symbolicID",
+                "valueType",
+                "displayType",
+                "min",
+                "max",
+                "default",
+                "forwardMap",
+                "reverseMap",
+            }
+        }
+        if extra_keys:
+            info["extra"] = extra_keys
+        details[name] = info
+    return details
 
 
 def _call_ollama(endpoint: str, model_name: str, prompt: str) -> str:

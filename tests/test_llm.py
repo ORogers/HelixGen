@@ -25,6 +25,16 @@ def test_compose_prompt_includes_schema(dataset_path):
     assert "begin with '{'" in prompt
 
 
+def test_compose_prompt_includes_model_details(dataset_path):
+    catalog = ModelCatalog(dataset_path)
+    prompt = _compose_prompt("Clean tone", catalog)
+
+    assert '"based_on": "Horizon Devices Precision Drive incl Gate Range"' in prompt
+    assert '"parameters": {' in prompt
+    assert '"Drive": {' in prompt
+    assert '"default": 0.25' in prompt
+
+
 def test_generate_chain_requires_object(monkeypatch: pytest.MonkeyPatch, dataset_path: Path):
     catalog = ModelCatalog(dataset_path)
 
