@@ -248,6 +248,58 @@ def test_cli_describe_reports_invalid_llm_json(
     assert "LLM error" in captured.err
 
 
+def test_cli_describe_reports_array_response(
+    dataset_path: Path,
+    schema_path: Path,
+    template_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture,
+) -> None:
+    def fake_urlopen(_: Any):
+        class _Response:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self) -> bytes:
+                payload = {
+                    "response": json.dumps(
+                        [
+                            {
+                                "internal_name": "HD2_DistClean",
+                                "params": {"Clean": 1.0},
+                            }
+                        ]
+                    ),
+                    "done": True,
+                }
+                return json.dumps(payload).encode("utf-8")
+
+        return _Response()
+
+    monkeypatch.setattr("hlxgen.llm.request.urlopen", fake_urlopen)
+
+    exit_code = cli.main(
+        [
+            "--dataset",
+            str(dataset_path),
+            "describe",
+            "clean tone",
+            "--schema",
+            str(schema_path),
+            "--template",
+            str(template_path),
+        ]
+    )
+
+    captured = capsys.readouterr()
+
+    assert exit_code == 1
+    assert "JSON object" in captured.err
+
+
 def test_cli_describe_reports_http_error(
     dataset_path: Path,
     schema_path: Path,

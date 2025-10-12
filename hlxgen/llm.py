@@ -90,7 +90,16 @@ def generate_chain_from_prompt(
     response_text = _call_ollama(endpoint, model_name, full_prompt)
     chain = _parse_chain(response_text)
     if not isinstance(chain, dict):
-        raise LLMGenerationError("LLM response did not return a JSON object")
+        raise LLMGenerationError(
+            "LLM response must be a JSON object that matches the chain schema"
+        )
+    required_keys = ["meta", "global", "input", "output", "blocks"]
+    missing = [key for key in required_keys if key not in chain]
+    if missing:
+        missing_str = ", ".join(sorted(missing))
+        raise LLMGenerationError(
+            f"LLM response is missing required top-level keys: {missing_str}"
+        )
     blocks = chain.get("blocks")
     if not isinstance(blocks, list) or not blocks:
         raise LLMGenerationError("LLM response must include a non-empty 'blocks' list")
@@ -103,13 +112,14 @@ def _compose_prompt(user_prompt: str, catalog: ModelCatalog) -> str:
     schema_json = json.dumps(_CHAIN_SCHEMA, indent=2)
     instructions = (
         "You are a tone designer that builds signal chains for the Line 6 Helix. "
-        "Return a single JSON object compatible with hlxgen. The object must include "
-        "the top-level keys 'meta', 'global', 'input', 'output', and 'blocks'. "
-        "The 'blocks' array must contain entries whose 'model' value comes from the "
-        "available models list provided below. The JSON must validate against the "
-        "exact schema provided. When unsure about parameter values, omit them to fall "
-        "back to dataset defaults. Do not include markdown fences or commentary—output "
-        "strictly JSON."
+        "Return EXACTLY one JSON object compatible with hlxgen and nothing else. "
+        "Do not wrap the object in an array or add leading text—the response must "
+        "begin with '{' and end with '}'. The object must include the top-level keys "
+        "'meta', 'global', 'input', 'output', and 'blocks'. The 'blocks' array must "
+        "contain entries whose 'model' value comes from the available models list "
+        "provided below. The JSON must validate against the exact schema provided. "
+        "When unsure about parameter values, omit them to fall back to dataset defaults. "
+        "Do not include markdown fences or commentary—output strictly JSON."
     )
     summary_text = json.dumps(models_summary, indent=2)
     return (
@@ -209,12 +219,18 @@ def _parse_chain(response_text: str) -> Any:
         text = text.split("\n", 1)[-1]
         if "```" in text:
             text = text.rsplit("```", 1)[0]
-    start = text.find("{")
-    end = text.rfind("}")
-    if start == -1 or end == -1 or end <= start:
-        raise LLMGenerationError("Could not locate JSON object in LLM response")
-    snippet = text[start : end + 1]
+    cleaned = text.strip()
+    if not cleaned:
+        raise LLMGenerationError("LLM response was empty")
     try:
-        return json.loads(snippet)
-    except json.JSONDecodeError as exc:
-        raise LLMGenerationError("LLM response did not contain valid JSON") from exc
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
+        start = cleaned.find("{")
+        end = cleaned.rfind("}")
+        if start == -1 or end == -1 or end <= start:
+            raise LLMGenerationError("Could not locate JSON object in LLM response")
+        snippet = cleaned[start : end + 1]
+        try:
+            return json.loads(snippet)
+        except json.JSONDecodeError as exc:
+            raise LLMGenerationError("LLM response did not contain valid JSON") from exc
