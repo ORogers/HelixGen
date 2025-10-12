@@ -37,43 +37,6 @@ _EXAMPLE_CHAIN = {
 }
 
 
-_FEWSHOT_EXAMPLES: list[dict[str, Any]] = [
-    {
-        "goal": "Bright Nashville clean rhythm with subtle compression and slapback",
-        "response": {
-            "title": "Nashville Sparkle",
-            "blocks": [
-                "US Deluxe Vib",
-                "LA Studio Comp",
-                "Transistor Tape",
-            ],
-        },
-    },
-    {
-        "goal": "Modern worship ambience with lush modulation and spacious reverb",
-        "response": {
-            "title": "Shimmering Atmosphere",
-            "blocks": [
-                "US Double Nrm",
-                "Elephant Man",
-                "Plate Reverb",
-            ],
-        },
-    },
-    {
-        "goal": "Tight high-gain rhythm tone with boosted attack and noise control",
-        "response": {
-            "title": "Punchy Recto Rhythm",
-            "blocks": [
-                "Scream 808",
-                "Cali Rectifire",
-                "Hard Gate",
-            ],
-        },
-    },
-]
-
-
 def generate_chain_from_prompt(
     prompt: str,
     catalog: ModelCatalog,
@@ -126,14 +89,6 @@ def generate_chain_from_prompt(
 def _compose_prompt(user_prompt: str, catalog: ModelCatalog) -> str:
     models_summary = _summarize_catalog(catalog)
     example_json = json.dumps(_EXAMPLE_CHAIN, indent=2)
-    fewshot_sections = []
-    for index, sample in enumerate(_FEWSHOT_EXAMPLES, start=1):
-        sample_json = json.dumps(sample["response"], indent=2)
-        fewshot_sections.append(
-            "Example {index} — user goal: {goal}\nValid JSON response:\n{response}".format(
-                index=index, goal=sample["goal"], response=sample_json
-            )
-        )
     schema_json = json.dumps(_CHAIN_SCHEMA, indent=2)
     instructions = (
         "You are a tone designer that builds signal chains for the Line 6 Helix. "
@@ -143,17 +98,20 @@ def _compose_prompt(user_prompt: str, catalog: ModelCatalog) -> str:
         "and a 'blocks' array. Each entry in 'blocks' must be the display name of a "
         "model listed below. Select only the blocks that directly support the "
         "requested tone; avoid unrelated effects and limit the chain to the most "
-        "useful 1-8 blocks in musical order. Provide only the title and ordered list "
-        "of block names—parameter values will be filled automatically. The JSON must "
+        "useful 1-8 blocks. The chain MUST include an amp and a cab and a reverb. Provide only the title and ordered list "
+        "of block names—parameter values will be filled automatically."
+        "The order should be as such, dynamics -> drive/distorition -> modulation-> amp -> cab -> delay -> reverb"
+        "You do not need to select a pedal from at catagory if you don't think it will fit. I.e a distorion is not always needed."
+        "The JSON must " 
         "validate against the exact schema provided. Do not include markdown fences or "
         "commentary—output strictly JSON."
+        "You will be strongly pinalized for returning block names that are not in the dataset"
     )
     summary_text = json.dumps(models_summary, indent=2)
     return (
         f"{instructions}\n\n"
         f"Required JSON schema:\n{schema_json}\n\n"
         f"Example chain structure:\n{example_json}\n\n"
-        f"Example conversions from goals to JSON:\n{chr(10).join(fewshot_sections)}\n\n"
         f"Available models by category (ordered, include only relevant blocks):\n{summary_text}\n\n"
         f"User goal: {user_prompt.strip()}\n"
         "Respond with valid JSON only."
@@ -170,9 +128,6 @@ def _summarize_catalog(catalog: ModelCatalog) -> dict[str, list[dict[str, Any]]]
         }
         if model.based_on:
             info["based_on"] = model.based_on
-        key_params = list(sorted(model.parameters.keys()))
-        if key_params:
-            info["key_parameters"] = key_params[:5]
         grouped.setdefault(category, []).append(info)
     return grouped
 
@@ -181,6 +136,7 @@ def _call_ollama(endpoint: str, model_name: str, prompt: str) -> str:
     payload = json.dumps({"model": model_name, "prompt": prompt, "stream": False}).encode(
         "utf-8"
     )
+    print(payload)
     req = request.Request(
         endpoint,
         data=payload,

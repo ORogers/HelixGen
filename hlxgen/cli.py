@@ -96,7 +96,7 @@ def build_parser() -> argparse.ArgumentParser:
     describe_parser.add_argument(
         "--ollama-model",
         dest="ollama_model",
-        default="llama3",
+        default="gpt-oss:20b",
         help="Ollama model name to query (default: llama3)",
     )
     describe_parser.add_argument(
