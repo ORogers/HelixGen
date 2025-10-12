@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import io
 import json
 from pathlib import Path
 from typing import Any
+from urllib import error as url_error
 
 import pytest
 
@@ -244,3 +246,41 @@ def test_cli_describe_reports_invalid_llm_json(
 
     assert exit_code == 1
     assert "LLM error" in captured.err
+
+
+def test_cli_describe_reports_http_error(
+    dataset_path: Path,
+    schema_path: Path,
+    template_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture,
+) -> None:
+    def fake_urlopen(_: Any):
+        raise url_error.HTTPError(
+            url="http://localhost:11434/api/generate",
+            code=404,
+            msg="Not Found",
+            hdrs=None,
+            fp=io.BytesIO(b""),
+        )
+
+    monkeypatch.setattr("hlxgen.llm.request.urlopen", fake_urlopen)
+
+    exit_code = cli.main(
+        [
+            "--dataset",
+            str(dataset_path),
+            "describe",
+            "Play me a crunchy rhythm",
+            "--schema",
+            str(schema_path),
+            "--template",
+            str(template_path),
+        ]
+    )
+
+    captured = capsys.readouterr()
+
+    assert exit_code == 1
+    assert "Ollama returned HTTP 404" in captured.err
+    assert "/api/generate" in captured.err

@@ -102,10 +102,44 @@ def _call_ollama(endpoint: str, model_name: str, prompt: str) -> str:
     payload = json.dumps({"model": model_name, "prompt": prompt, "stream": False}).encode(
         "utf-8"
     )
-    req = request.Request(endpoint, data=payload, headers={"Content-Type": "application/json"})
+    req = request.Request(
+        endpoint,
+        data=payload,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
     try:
         with request.urlopen(req) as resp:
             body = resp.read().decode("utf-8")
+    except error.HTTPError as exc:
+        detail = ""
+        try:
+            raw_detail = exc.read().decode("utf-8") if exc.fp else ""
+        except Exception:  # pragma: no cover - protective fallback
+            raw_detail = ""
+        if raw_detail:
+            try:
+                decoded = json.loads(raw_detail)
+            except json.JSONDecodeError:
+                detail = raw_detail.strip()
+            else:
+                if isinstance(decoded, dict):
+                    detail = str(decoded.get("error") or raw_detail.strip())
+                else:
+                    detail = raw_detail.strip()
+        message = f"Ollama returned HTTP {exc.code}"
+        if exc.reason:
+            message += f" ({exc.reason})"
+        if detail:
+            message += f": {detail}"
+        else:
+            message += "."
+        if exc.code == 404:
+            message += (
+                " Ensure the endpoint URL includes the /api/generate path or adjust it via "
+                "--ollama-endpoint."
+            )
+        raise LLMGenerationError(message) from exc
     except error.URLError as exc:
         raise LLMGenerationError(f"Failed to reach Ollama endpoint {endpoint}: {exc}") from exc
     try:
