@@ -33,6 +33,7 @@ python3 -m hlxgen --dataset helix_model_information.json generate path/to/chain.
 python3 -m hlxgen --dataset helix_model_information.json validate FullRainbowClean.hlx --schema helix-preset.schema.json
 python3 -m hlxgen --dataset helix_model_information.json models --category Distortion
 python3 -m hlxgen inspect FullRainbowClean.hlx --dataset helix_model_information.json
+python3 -m hlxgen --dataset helix_model_information.json describe "spacious worship clean" --schema helix-preset.schema.json
 ```
 
 - `generate` expects a chain definition with an ordered `blocks` list. Optional overrides (`--name`, `--author`, `--tempo`, `--device`, `--device-id`, `--device-version`, `--app-version`, `--template`, `--output`, `--dry-run`) adjust metadata and output behavior. Defaults mirror HX Stomp numeric IDs so the resulting preset imports cleanly in HX Edit/HX Stomp.
@@ -41,6 +42,18 @@ python3 -m hlxgen inspect FullRainbowClean.hlx --dataset helix_model_information
 - `validate` checks structural schema compliance and verifies every block model + parameter against the dataset. Use `--report` to write JSON results.
 - `inspect` produces a simple text table summarizing the preset signal chain.
 - `models` prints a catalog of available models sourced from the dataset, optionally filtered by `--category`.
+
+### Describe command & LangChain-driven Ollama prompting
+
+The `describe` subcommand converts a natural-language tone request into a preset by orchestrating a LangChain workflow around a locally hosted Ollama model. The helper now:
+
+- Composes a catalog-backed briefing that encourages the model to analyze candidate blocks before responding.
+- Supplies the minimal JSON schema (title + ordered block names) that the LLM must satisfy.
+- Injects a template chain illustrating the required object layout.
+- Seeds the conversation with few-shot pairs that map real user goals to valid JSON constructed from the dataset’s display names.
+- Streams the guidance through LangChain’s `ChatOllama` client, which enforces a structured response via Pydantic so the output always matches the schema.
+
+Because the few-shot responses are drawn from actual catalog entries and the LangChain wrapper validates the schema, the LLM receives concrete demonstrations plus a hard structured-output contract. The CLI expands the returned block list into a full preset using default parameters from `helix_model_information.json`.
 
 ## Testing
 Unit tests are written with `pytest`:

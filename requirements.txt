@@ -1,5 +1,7 @@
 # Core runtime dependencies
 pyyaml>=6.0
+langchain-core>=0.1.33
+langchain-community>=0.0.38
 
 # Development / testing utilities
 pytest>=7.4
