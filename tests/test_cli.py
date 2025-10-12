@@ -167,15 +167,9 @@ def test_cli_describe_generates_from_prompt(
 
             def read(self) -> bytes:
                 chain = {
-                    "meta": {"name": "Prompted Tone"},
-                    "global": {"@tempo": 100.0},
-                    "input": {"@model": "HelixStomp_AppDSPFlowInput", "@input": 1},
-                    "output": {"@model": "HelixStomp_AppDSPFlowOutputMain", "@output": 1},
+                    "title": "Prompted Tone",
                     "blocks": [
-                        {
-                            "model": "Horizon Drive",
-                            "parameters": {"Drive": 2.5},
-                        }
+                        "Horizon Drive",
                     ],
                 }
                 payload = {"response": json.dumps(chain), "done": True}

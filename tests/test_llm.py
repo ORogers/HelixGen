@@ -59,3 +59,105 @@ def test_generate_chain_requires_object(monkeypatch: pytest.MonkeyPatch, dataset
         )
 
     assert "JSON object" in str(excinfo.value)
+
+
+def test_generate_chain_converts_minimal_spec(
+    monkeypatch: pytest.MonkeyPatch, dataset_path: Path
+) -> None:
+    catalog = ModelCatalog(dataset_path)
+
+    def fake_call(endpoint: str, model_name: str, prompt: str) -> str:
+        _ = endpoint, model_name, prompt
+        return json.dumps(
+            {
+                "title": "Clean Tone",
+                "blocks": ["Horizon Drive", "Transistor Tape"],
+            }
+        )
+
+    monkeypatch.setattr("hlxgen.llm._call_ollama", fake_call)
+
+    chain = generate_chain_from_prompt(
+        prompt="clean tone",
+        catalog=catalog,
+        model_name="fake-model",
+    )
+
+    assert chain["meta"]["name"] == "Clean Tone"
+    assert chain["blocks"] == [
+        {"model": "Horizon Drive"},
+        {"model": "Transistor Tape"},
+    ]
+
+
+def test_generate_chain_includes_optional_metadata(
+    monkeypatch: pytest.MonkeyPatch, dataset_path: Path
+) -> None:
+    catalog = ModelCatalog(dataset_path)
+
+    def fake_call(endpoint: str, model_name: str, prompt: str) -> str:
+        _ = endpoint, model_name, prompt
+        return json.dumps(
+            {
+                "title": "Sparkly",
+                "author": "Tone Bot",
+                "description": "Bright and chimy",
+                "blocks": ["US Double Nrm"],
+            }
+        )
+
+    monkeypatch.setattr("hlxgen.llm._call_ollama", fake_call)
+
+    chain = generate_chain_from_prompt(
+        prompt="sparkly clean",
+        catalog=catalog,
+        model_name="fake-model",
+    )
+
+    assert chain["meta"] == {
+        "name": "Sparkly",
+        "author": "Tone Bot",
+        "description": "Bright and chimy",
+    }
+
+
+def test_generate_chain_rejects_non_string_block(
+    monkeypatch: pytest.MonkeyPatch, dataset_path: Path
+) -> None:
+    catalog = ModelCatalog(dataset_path)
+
+    def fake_call(endpoint: str, model_name: str, prompt: str) -> str:
+        _ = endpoint, model_name, prompt
+        return json.dumps({"title": "Bad", "blocks": [123]})
+
+    monkeypatch.setattr("hlxgen.llm._call_ollama", fake_call)
+
+    with pytest.raises(LLMGenerationError) as excinfo:
+        generate_chain_from_prompt(
+            prompt="bad",
+            catalog=catalog,
+            model_name="fake-model",
+        )
+
+    assert "block entry" in str(excinfo.value).lower()
+
+
+def test_generate_chain_rejects_unknown_model(
+    monkeypatch: pytest.MonkeyPatch, dataset_path: Path
+) -> None:
+    catalog = ModelCatalog(dataset_path)
+
+    def fake_call(endpoint: str, model_name: str, prompt: str) -> str:
+        _ = endpoint, model_name, prompt
+        return json.dumps({"title": "Mystery", "blocks": ["NotARealModel"]})
+
+    monkeypatch.setattr("hlxgen.llm._call_ollama", fake_call)
+
+    with pytest.raises(LLMGenerationError) as excinfo:
+        generate_chain_from_prompt(
+            prompt="mystery",
+            catalog=catalog,
+            model_name="fake-model",
+        )
+
+    assert "unknown model" in str(excinfo.value).lower()

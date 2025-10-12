@@ -4,7 +4,7 @@ import json
 from typing import Any
 from urllib import error, request
 
-from .dataset import ModelCatalog, ModelDefinition
+from .dataset import ModelCatalog, ModelCatalogError, ModelDefinition
 
 
 class LLMGenerationError(RuntimeError):
@@ -13,67 +13,26 @@ class LLMGenerationError(RuntimeError):
 
 _CHAIN_SCHEMA = {
     "type": "object",
-    "required": ["meta", "global", "input", "output", "blocks"],
+    "required": ["title", "blocks"],
     "additionalProperties": False,
     "properties": {
-        "meta": {
-            "type": "object",
-            "required": ["name"],
-            "properties": {
-                "name": {"type": "string"},
-                "author": {"type": "string"},
-                "description": {"type": "string"},
-            },
-        },
-        "global": {"type": "object"},
-        "input": {
-            "type": "object",
-            "required": ["@model"],
-            "properties": {"@model": {"type": "string"}, "@input": {"type": "integer"}},
-        },
-        "output": {
-            "type": "object",
-            "required": ["@model"],
-            "properties": {"@model": {"type": "string"}, "@output": {"type": "integer"}},
-        },
+        "title": {"type": "string", "minLength": 1},
+        "author": {"type": "string"},
+        "description": {"type": "string"},
         "blocks": {
             "type": "array",
             "minItems": 1,
-            "items": {
-                "type": "object",
-                "required": ["model"],
-                "properties": {
-                    "model": {"type": "string"},
-                    "path": {"type": "integer"},
-                    "position": {"type": "integer"},
-                    "type": {"type": "integer"},
-                    "parameters": {"type": "object"},
-                },
-            },
+            "items": {"type": "string", "minLength": 1},
         },
     },
 }
 
 
 _EXAMPLE_CHAIN = {
-    "meta": {"name": "Example Tone", "author": "Ollama"},
-    "global": {"@tempo": 120.0},
-    "input": {"@model": "HelixStomp_AppDSPFlowInput", "@input": 1},
-    "output": {"@model": "HelixStomp_AppDSPFlowOutputMain", "@output": 1},
+    "title": "Example Tone",
     "blocks": [
-        {
-            "model": "Horizon Drive",
-            "path": 0,
-            "position": 0,
-            "type": 0,
-            "parameters": {"Drive": 2.0, "Bright": 0.2},
-        },
-        {
-            "model": "HD2_DlyTransistorTape",
-            "path": 0,
-            "position": 1,
-            "type": 2,
-        },
+        "Horizon Drive",
+        "Transistor Tape",
     ],
 }
 
@@ -88,21 +47,42 @@ def generate_chain_from_prompt(
 
     full_prompt = _compose_prompt(prompt, catalog)
     response_text = _call_ollama(endpoint, model_name, full_prompt)
-    chain = _parse_chain(response_text)
-    if not isinstance(chain, dict):
+    spec = _parse_chain(response_text)
+    if not isinstance(spec, dict):
         raise LLMGenerationError(
             "LLM response must be a JSON object that matches the chain schema"
         )
-    required_keys = ["meta", "global", "input", "output", "blocks"]
-    missing = [key for key in required_keys if key not in chain]
-    if missing:
-        missing_str = ", ".join(sorted(missing))
-        raise LLMGenerationError(
-            f"LLM response is missing required top-level keys: {missing_str}"
-        )
-    blocks = chain.get("blocks")
+    title = spec.get("title")
+    if not isinstance(title, str) or not title.strip():
+        raise LLMGenerationError("LLM response must include a non-empty 'title' string")
+
+    blocks = spec.get("blocks")
     if not isinstance(blocks, list) or not blocks:
         raise LLMGenerationError("LLM response must include a non-empty 'blocks' list")
+
+    chain: dict[str, Any] = {
+        "meta": {"name": title.strip()},
+        "blocks": [],
+    }
+
+    author = spec.get("author")
+    if isinstance(author, str) and author.strip():
+        chain["meta"]["author"] = author.strip()
+
+    description = spec.get("description")
+    if isinstance(description, str) and description.strip():
+        chain["meta"]["description"] = description.strip()
+
+    for entry in blocks:
+        if not isinstance(entry, str) or not entry.strip():
+            raise LLMGenerationError("Each block entry must be the name of a model as a string")
+        model_name = entry.strip()
+        try:
+            model = catalog.get(model_name)
+        except ModelCatalogError as exc:
+            raise LLMGenerationError(f"Unknown model '{model_name}' in LLM response") from exc
+        chain["blocks"].append({"model": model.display_name})
+
     return chain
 
 
@@ -114,12 +94,12 @@ def _compose_prompt(user_prompt: str, catalog: ModelCatalog) -> str:
         "You are a tone designer that builds signal chains for the Line 6 Helix. "
         "Return EXACTLY one JSON object compatible with hlxgen and nothing else. "
         "Do not wrap the object in an array or add leading text—the response must "
-        "begin with '{' and end with '}'. The object must include the top-level keys "
-        "'meta', 'global', 'input', 'output', and 'blocks'. The 'blocks' array must "
-        "contain entries whose 'model' value comes from the available models list "
-        "provided below. The JSON must validate against the exact schema provided. "
-        "When unsure about parameter values, omit them to fall back to dataset defaults. "
-        "Do not include markdown fences or commentary—output strictly JSON."
+        "begin with '{' and end with '}'. The object must include a 'title' string "
+        "and a 'blocks' array. Each item in 'blocks' must be the name of a model from "
+        "the available models list provided below. Provide only the title and ordered "
+        "list of block names—parameter values will be filled automatically. The JSON "
+        "must validate against the exact schema provided. Do not include markdown "
+        "fences or commentary—output strictly JSON."
     )
     summary_text = json.dumps(models_summary, indent=2)
     return (
