@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -143,3 +144,103 @@ def test_cli_models_lists_dataset(dataset_path: Path, capsys: pytest.CaptureFixt
     assert "Model" in captured.out
     assert "Horizon Drive" in captured.out
     assert "HD2_DistHorizonDrive" in captured.out
+
+
+def test_cli_describe_generates_from_prompt(
+    tmp_path: Path,
+    dataset_path: Path,
+    schema_path: Path,
+    template_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    preset_path = tmp_path / "prompted.hlx"
+
+    def fake_urlopen(request_obj: Any):
+        class _Response:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self) -> bytes:
+                chain = {
+                    "meta": {"name": "Prompted Tone"},
+                    "global": {"@tempo": 100.0},
+                    "input": {"@model": "HelixStomp_AppDSPFlowInput", "@input": 1},
+                    "output": {"@model": "HelixStomp_AppDSPFlowOutputMain", "@output": 1},
+                    "blocks": [
+                        {
+                            "model": "Horizon Drive",
+                            "parameters": {"Drive": 2.5},
+                        }
+                    ],
+                }
+                payload = {"response": json.dumps(chain), "done": True}
+                return json.dumps(payload).encode("utf-8")
+
+        return _Response()
+
+    monkeypatch.setattr("hlxgen.llm.request.urlopen", fake_urlopen)
+
+    exit_code = cli.main(
+        [
+            "--dataset",
+            str(dataset_path),
+            "describe",
+            "Warm fuzzy lead sound",
+            "--schema",
+            str(schema_path),
+            "--template",
+            str(template_path),
+            "--output",
+            str(preset_path),
+            "--ollama-model",
+            "fake-model",
+        ]
+    )
+
+    assert exit_code == 0
+    assert preset_path.exists()
+
+
+def test_cli_describe_reports_invalid_llm_json(
+    dataset_path: Path,
+    schema_path: Path,
+    template_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture,
+) -> None:
+    def fake_urlopen(_: Any):
+        class _Response:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self) -> bytes:
+                payload = {"response": "not-json", "done": True}
+                return json.dumps(payload).encode("utf-8")
+
+        return _Response()
+
+    monkeypatch.setattr("hlxgen.llm.request.urlopen", fake_urlopen)
+
+    exit_code = cli.main(
+        [
+            "--dataset",
+            str(dataset_path),
+            "describe",
+            "Give me something impossible",
+            "--schema",
+            str(schema_path),
+            "--template",
+            str(template_path),
+        ]
+    )
+
+    captured = capsys.readouterr()
+
+    assert exit_code == 1
+    assert "LLM error" in captured.err
