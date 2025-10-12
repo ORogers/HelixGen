@@ -40,3 +40,7 @@ def test_generate_preset_applies_defaults_and_overrides(dataset_path, horizon_ch
     # Drive input of 2.0 should clamp to dataset max (1.0) and produce a warning
     assert block["Drive"] == 1.0
     assert any("clamped to maximum" in warning for warning in report.warnings)
+
+    footswitch = tone["footswitch"]["dsp0"]["block0"]
+    assert footswitch["@fs_index"] == 1
+    assert footswitch["@fs_enabled"] is True

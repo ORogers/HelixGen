@@ -37,6 +37,7 @@ python3 -m hlxgen inspect FullRainbowClean.hlx --dataset helix_model_information
 
 - `generate` expects a chain definition with an ordered `blocks` list. Optional overrides (`--name`, `--author`, `--tempo`, `--device`, `--device-id`, `--device-version`, `--app-version`, `--template`, `--output`, `--dry-run`) adjust metadata and output behavior. Defaults mirror HX Stomp numeric IDs so the resulting preset imports cleanly in HX Edit/HX Stomp.
 - Templates: generation starts from `HXTemplate.hlx` (override with `--template`) so structural metadata like snapshots, global parameters, and secondary outputs match a known-good HX Stomp export.
+- Footswitches: the first three blocks in a chain are auto-assigned to footswitches 1–3 (override per-block with `footswitch`, `footswitch_label`, etc. in the chain JSON).
 - `validate` checks structural schema compliance and verifies every block model + parameter against the dataset. Use `--report` to write JSON results.
 - `inspect` produces a simple text table summarizing the preset signal chain.
 - `models` prints a catalog of available models sourced from the dataset, optionally filtered by `--category`.

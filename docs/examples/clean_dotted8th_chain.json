@@ -1,0 +1,98 @@
+{
+  "meta": {
+    "name": "Pristine Dotted 8th",
+    "application": "HX Edit",
+    "appversion": 58851328,
+    "author": "Example"
+  },
+  "global": {
+    "@tempo": 120.0
+  },
+  "blocks": [
+    {
+      "model": "LA Studio Comp",
+      "position": 0,
+      "parameters": {
+        "Type": "Compress",
+        "PeakReduction": 0.35,
+        "Gain": 0.35,
+        "Emphasis": 0.1,
+        "Mix": 1.0,
+        "Level": 0.0
+      }
+    },
+    {
+      "model": "US Double Vib",
+      "position": 1,
+      "type": 3,
+      "parameters": {
+        "Drive": 0.25,
+        "Bass": 0.55,
+        "Mid": 0.45,
+        "Treble": 0.55,
+        "Presence": 0.45,
+        "ChVol": 0.85,
+        "Master": 0.9,
+        "Sag": 0.55,
+        "Hum": 0.3,
+        "Ripple": 0.25,
+        "Bias": 0.55,
+        "BiasX": 0.5
+      }
+    },
+    {
+      "model": "4x12 Greenback 25",
+      "position": 2,
+      "type": 4,
+      "parameters": {
+        "Mic": "121 Ribbon",
+        "Position": 0.35,
+        "Distance": 3.0,
+        "Angle": 0.0,
+        "LowCut": 80.0,
+        "HighCut": 9000.0,
+        "Level": 0.0
+      }
+    },
+    {
+      "model": "Deluxe Comp",
+      "position": 3,
+      "parameters": {
+        "Ratio": "4:1",
+        "Threshold": -30,
+        "Attack": 0.01,
+        "Release": 0.25,
+        "Mix": 0.7,
+        "Level": 4.0,
+        "Knee": 6.0
+      }
+    },
+    {
+      "model": "Transistor Tape",
+      "position": 4,
+      "parameters": {
+        "TempoSync1": "On",
+        "SyncSelect1": 7,
+        "Time": 0.32,
+        "Feedback": 0.45,
+        "WowFlutter": 0.18,
+        "Mix": 0.32,
+        "Spread": 0.55,
+        "Headroom": 0.0,
+        "Level": -1.5
+      }
+    },
+    {
+      "model": "Plate Reverb",
+      "position": 5,
+      "parameters": {
+        "Decay": 0.55,
+        "Predelay": 0.04,
+        "Mix": 0.28,
+        "LowCut": 120.0,
+        "HighCut": 7500.0,
+        "Level": 0.5
+      }
+    }
+  ]
+}

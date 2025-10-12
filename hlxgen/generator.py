@@ -4,13 +4,14 @@ from dataclasses import dataclass, field
 import copy
 from typing import Any, Dict, List, Optional
 
-from .dataset import ModelCatalog, ModelCatalogError
+from .dataset import ModelCatalog, ModelCatalogError, ModelDefinition
 
 DEFAULT_APPLICATION = "HX Edit"
 DEFAULT_APP_VERSION = 58851328  # Matches HX Edit 3.70 numeric encoding
 DEFAULT_DEVICE_ID = 2162694  # HX Stomp / HX Edit identifiers observed in reference presets
 DEFAULT_DEVICE_VERSION = 57671680  # HX Stomp firmware encoding (e.g. 3.60)
 DEFAULT_TEMPLATE = "HXTemplate.hlx"
+DEFAULT_FOOTSWITCH_LED = 13676288
 
 
 @dataclass
@@ -105,6 +106,9 @@ def generate_preset(
     if isinstance(template_dsp0, dict) and "inputB" in template_dsp0:
         dsp_blocks["inputB"] = copy.deepcopy(template_dsp0["inputB"])
 
+    footswitch_assignments: Dict[str, Dict[str, Any]] = {}
+    automatic_fs_candidates: List[tuple[str, ModelDefinition, int]] = []
+
     for index, block_spec in enumerate(blocks_spec):
         if not isinstance(block_spec, dict):
             raise ModelCatalogError("Each block must be a mapping of properties.")
@@ -179,6 +183,64 @@ def generate_preset(
             for key, value in template_block.items():
                 dsp_blocks[block_id].setdefault(key, value)
 
+        fs_index = block_spec.get("footswitch")
+        if fs_index is not None:
+            try:
+                numeric_index = int(fs_index)
+            except (TypeError, ValueError) as exc:
+                raise ModelCatalogError(
+                    f"Footswitch index for block '{block_id}' must be numeric."
+                ) from exc
+            fs_label = block_spec.get("footswitch_label") or model.display_name
+            fs_enabled = bool(block_spec.get("footswitch_enabled", True))
+            fs_led = block_spec.get("footswitch_led", DEFAULT_FOOTSWITCH_LED)
+            fs_momentary = bool(block_spec.get("footswitch_momentary", False))
+            footswitch_assignments[block_id] = {
+                "@fs_label": fs_label,
+                "@fs_enabled": fs_enabled,
+                "@fs_index": numeric_index,
+                "@fs_ledcolor": fs_led,
+                "@fs_primary": True,
+                "@fs_momentary": fs_momentary,
+            }
+        else:
+            automatic_fs_candidates.append((block_id, model, index))
+
+    if automatic_fs_candidates:
+        priority_categories = {"distortion", "modulation", "delay"}
+        preferred: List[tuple[str, Any, int]] = []
+        fallback: List[tuple[str, Any, int]] = []
+        for block_id, candidate_model, order in automatic_fs_candidates:
+            category = (candidate_model.category or "").lower()
+            if category in priority_categories:
+                preferred.append((block_id, candidate_model, order))
+            else:
+                fallback.append((block_id, candidate_model, order))
+        ordered = preferred + fallback
+        used_indexes = {
+            assignment.get("@fs_index")
+            for assignment in footswitch_assignments.values()
+            if isinstance(assignment, dict)
+        }
+        next_index = 1
+        for block_id, candidate_model, _ in ordered:
+            if block_id in footswitch_assignments:
+                continue
+            while next_index in used_indexes:
+                next_index += 1
+            if next_index > 3:
+                break
+            footswitch_assignments[block_id] = {
+                "@fs_label": candidate_model.display_name,
+                "@fs_enabled": True,
+                "@fs_index": next_index,
+                "@fs_ledcolor": DEFAULT_FOOTSWITCH_LED,
+                "@fs_primary": True,
+                "@fs_momentary": False,
+            }
+            used_indexes.add(next_index)
+            next_index += 1
+
     dsp_blocks["outputA"] = output_block
     if isinstance(template_output_send, dict):
         dsp_blocks["outputB"] = copy.deepcopy(template_output_send)
@@ -201,6 +263,14 @@ def generate_preset(
         dsp_map = blocks_map.setdefault("dsp0", {})
         for block_key in block_keys:
             dsp_map.setdefault(block_key, True)
+
+    footswitch_section = copy.deepcopy(template_tone.get("footswitch", {})) if isinstance(template_tone, dict) else {}
+    if footswitch_assignments:
+        dsp_fs = footswitch_section.setdefault("dsp0", {})
+        for block_id, assignment in footswitch_assignments.items():
+            dsp_fs[block_id] = assignment
+    if footswitch_section:
+        tone_section["footswitch"] = footswitch_section
 
     template_default_app = template_app_version if isinstance(template_app_version, (int, float)) else DEFAULT_APP_VERSION
     template_default_device = template_device if isinstance(template_device, (int, float)) else DEFAULT_DEVICE_ID
