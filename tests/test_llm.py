@@ -66,7 +66,7 @@ def test_generate_chain_requires_object(monkeypatch: pytest.MonkeyPatch, dataset
         generate_chain_from_prompt(
             prompt="clean tone",
             catalog=catalog,
-            model_name="fake-model",
+            llm_model="fake-model",
         )
 
     assert "JSON object" in str(excinfo.value)
@@ -78,7 +78,9 @@ def test_generate_chain_converts_minimal_spec(
     catalog = ModelCatalog(dataset_path)
 
     def fake_call(endpoint: str, model_name: str, prompt: str) -> str:
-        _ = endpoint, model_name, prompt
+        _ = endpoint, model_name
+        if "Available parameters:" in prompt:
+            return json.dumps({"parameters": {}})
         return json.dumps(
             {
                 "title": "Clean Tone",
@@ -91,7 +93,7 @@ def test_generate_chain_converts_minimal_spec(
     chain = generate_chain_from_prompt(
         prompt="clean tone",
         catalog=catalog,
-        model_name="fake-model",
+        llm_model="fake-model",
     )
 
     assert chain["meta"]["name"] == "Clean Tone"
@@ -107,7 +109,9 @@ def test_generate_chain_includes_optional_metadata(
     catalog = ModelCatalog(dataset_path)
 
     def fake_call(endpoint: str, model_name: str, prompt: str) -> str:
-        _ = endpoint, model_name, prompt
+        _ = endpoint, model_name
+        if "Available parameters:" in prompt:
+            return json.dumps({"parameters": {}})
         return json.dumps(
             {
                 "title": "Sparkly",
@@ -122,7 +126,7 @@ def test_generate_chain_includes_optional_metadata(
     chain = generate_chain_from_prompt(
         prompt="sparkly clean",
         catalog=catalog,
-        model_name="fake-model",
+        llm_model="fake-model",
     )
 
     assert chain["meta"] == {
@@ -138,7 +142,9 @@ def test_generate_chain_rejects_non_string_block(
     catalog = ModelCatalog(dataset_path)
 
     def fake_call(endpoint: str, model_name: str, prompt: str) -> str:
-        _ = endpoint, model_name, prompt
+        _ = endpoint, model_name
+        if "Available parameters:" in prompt:
+            return json.dumps({"parameters": {}})
         return json.dumps({"title": "Bad", "blocks": [123]})
 
     monkeypatch.setattr("hlxgen.llm._call_ollama", fake_call)
@@ -147,7 +153,7 @@ def test_generate_chain_rejects_non_string_block(
         generate_chain_from_prompt(
             prompt="bad",
             catalog=catalog,
-            model_name="fake-model",
+            llm_model="fake-model",
         )
 
     assert "block entry" in str(excinfo.value).lower()
@@ -159,7 +165,9 @@ def test_generate_chain_rejects_unknown_model(
     catalog = ModelCatalog(dataset_path)
 
     def fake_call(endpoint: str, model_name: str, prompt: str) -> str:
-        _ = endpoint, model_name, prompt
+        _ = endpoint, model_name
+        if "Available parameters:" in prompt:
+            return json.dumps({"parameters": {}})
         return json.dumps({"title": "Mystery", "blocks": ["NotARealModel"]})
 
     monkeypatch.setattr("hlxgen.llm._call_ollama", fake_call)
@@ -168,7 +176,35 @@ def test_generate_chain_rejects_unknown_model(
         generate_chain_from_prompt(
             prompt="mystery",
             catalog=catalog,
-            model_name="fake-model",
+            llm_model="fake-model",
         )
 
     assert "unknown model" in str(excinfo.value).lower()
+
+
+def test_cab_parameters_use_defaults(
+    monkeypatch: pytest.MonkeyPatch, dataset_path: Path
+) -> None:
+    catalog = ModelCatalog(dataset_path)
+
+    def fake_call(endpoint: str, model_name: str, prompt: str) -> str:
+        _ = endpoint, model_name
+        if "Available parameters:" in prompt:
+            pytest.fail("Cab blocks should not trigger parameter selection.")
+        return json.dumps(
+            {
+                "title": "Cab Only",
+                "blocks": ["2x12 Blue Bell"],
+            }
+        )
+
+    monkeypatch.setattr("hlxgen.llm._call_ollama", fake_call)
+
+    chain = generate_chain_from_prompt(
+        prompt="just a cab",
+        catalog=catalog,
+        llm_model="fake-model",
+    )
+
+    assert chain["blocks"] == [{"model": "2x12 Blue Bell"}]
+    assert "parameters" not in chain["blocks"][0]

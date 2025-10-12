@@ -255,7 +255,7 @@ def run_describe(args: argparse.Namespace) -> int:
         chain = generate_chain_from_prompt(
             prompt=args.prompt,
             catalog=catalog,
-            model_name=args.ollama_model,
+            llm_model=args.ollama_model,
             endpoint=args.ollama_endpoint,
         )
     except LLMGenerationError as exc:
