@@ -44,11 +44,11 @@ _FEWSHOT_EXAMPLES = [
         "response": {
             "title": "Arena Crunch",
             "blocks": [
-                "LA Studio Comp",
-                "Minotaur",
-                "Brit Plexi Brt",
-                "2x12 Blue Bell",
-                "Plate Reverb",
+                "Example Comp"
+                "Example Drive",
+                "Example Amp",
+                "Example Cab",
+                "Example Reverb",
             ],
         },
     },
@@ -57,11 +57,11 @@ _FEWSHOT_EXAMPLES = [
         "response": {
             "title": "Shimmering Skies",
             "blocks": [
-                "Deluxe Comp",
-                "Jazz Rivet 120",
-                "2x12 Match H30",
-                "Adriatic Delay",
-                "Glitz",
+                "Example Comp"
+                "Example Drive",
+                "Example Amp",
+                "Example Cab",
+                "Example Reverb",
             ],
         },
     },
@@ -167,7 +167,8 @@ def _compose_prompt(user_prompt: str, catalog: ModelCatalog) -> str:
         "and a 'blocks' array. Each entry in 'blocks' must be the display name of a "
         "model listed below. Select only the blocks that directly support the "
         "requested tone; avoid unrelated effects and limit the chain to the most "
-        "useful 1-8 blocks. The chain MUST include an amp and a cab and a reverb. Provide only the title and ordered list "
+        "useful 1-8 blocks. Try to reason why each block would be included to match the user request tone"
+        "The chain MUST include an amp and a cab and a reverb. Provide only the title and ordered list "
         "of block names—parameters will be requested separately, do not include them now."
         "The order should be as such, dynamics -> drive/distorition -> modulation-> amp -> cab -> delay -> reverb"
         "You do not need to select a pedal from at catagory if you don't think it will fit. I.e a distorion is not always needed."
@@ -202,11 +203,7 @@ def _summarize_catalog(catalog: ModelCatalog) -> dict[str, list[dict[str, Any]]]
         }
         if model.based_on:
             info["based_on"] = model.based_on
-        key_parameters = [
-            name for name in model.parameter_names() if not name.startswith("@")
-        ]
-        if key_parameters:
-            info["key_parameters"] = key_parameters[:6]
+
         grouped.setdefault(category, []).append(info)
     return grouped
 
@@ -378,6 +375,8 @@ def _compose_parameter_prompt(
         "named 'parameters' whose value is a mapping of parameter names to the chosen values. "
         "Do not include explanatory text or markdown fences. "
         "Choose values that make musical sense and stay within the provided limits. "
+        "Don't set the gain or drive on distortion pedals, compressors or amps very high. distortion pedals will be used in "
+        "conjunction with amps to get a high gain sound."
         "For enumerated options, return the option label exactly as listed. "
         "For boolean parameters, return true or false. "
         "For continuous parameters, return a numeric value within the inclusive range. "
