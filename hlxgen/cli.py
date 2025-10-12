@@ -4,13 +4,14 @@ import argparse
 import json
 from pathlib import Path
 import sys
-from typing import Any
+from typing import Any, Callable
 
 from .dataset import ModelCatalog, ModelCatalogError
 from .generator import DEFAULT_TEMPLATE, generate_preset
 from .inspector import inspect_preset
 from .io import load_chain_spec, load_json_file
 from .validator import PresetValidator, ValidationError
+from .llm import LLMGenerationError, generate_chain_from_prompt
 
 DEFAULT_DATASET = Path("helix_model_information.json")
 DEFAULT_SCHEMA = Path("helix-preset.schema.json")
@@ -43,57 +44,7 @@ def build_parser() -> argparse.ArgumentParser:
         type=_path,
         help="Path to the signal chain definition (JSON or YAML)",
     )
-    generate_parser.add_argument(
-        "--name",
-        help="Override preset name",
-    )
-    generate_parser.add_argument("--author", help="Preset author metadata")
-    generate_parser.add_argument(
-        "--tempo",
-        type=float,
-        help="Global tempo (BPM) override",
-    )
-    generate_parser.add_argument(
-        "--device",
-        help="Device string to embed into preset metadata",
-    )
-    generate_parser.add_argument(
-        "--output",
-        type=_path,
-        help="Destination .hlx path (defaults to <chain-name>.hlx)",
-    )
-    generate_parser.add_argument(
-        "--device-id",
-        type=int,
-        help="Numeric device identifier to embed (default mimics HX Stomp)",
-    )
-    generate_parser.add_argument(
-        "--device-version",
-        type=int,
-        help="Firmware/device version integer (default mimics HX Stomp)",
-    )
-    generate_parser.add_argument(
-        "--app-version",
-        type=int,
-        help="Application version integer stored in preset metadata",
-    )
-    generate_parser.add_argument(
-        "--schema",
-        type=_path,
-        default=DEFAULT_SCHEMA,
-        help="JSON schema used to validate the generated preset before writing",
-    )
-    generate_parser.add_argument(
-        "--template",
-        type=_path,
-        default=DEFAULT_TEMPLATE_PATH,
-        help="Template .hlx file used as a base when generating presets",
-    )
-    generate_parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Generate and validate but do not write output file",
-    )
+    _add_generation_arguments(generate_parser)
 
     validate_parser = subparsers.add_parser(
         "validate",
@@ -134,51 +85,96 @@ def build_parser() -> argparse.ArgumentParser:
         help="Filter models by category (case-insensitive)",
     )
 
+    describe_parser = subparsers.add_parser(
+        "describe",
+        help="Generate a preset by prompting a local Ollama model",
+    )
+    describe_parser.add_argument(
+        "prompt",
+        help="Natural language description of the desired tone",
+    )
+    describe_parser.add_argument(
+        "--ollama-model",
+        dest="ollama_model",
+        default="llama3",
+        help="Ollama model name to query (default: llama3)",
+    )
+    describe_parser.add_argument(
+        "--ollama-endpoint",
+        dest="ollama_endpoint",
+        default="http://localhost:11434/api/generate",
+        help="HTTP endpoint for the Ollama generate API",
+    )
+    _add_generation_arguments(describe_parser)
+
     return parser
+
+
+def _add_generation_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--name",
+        help="Override preset name",
+    )
+    parser.add_argument("--author", help="Preset author metadata")
+    parser.add_argument(
+        "--tempo",
+        type=float,
+        help="Global tempo (BPM) override",
+    )
+    parser.add_argument(
+        "--device",
+        help="Device string to embed into preset metadata",
+    )
+    parser.add_argument(
+        "--output",
+        type=_path,
+        help="Destination .hlx path",
+    )
+    parser.add_argument(
+        "--device-id",
+        type=int,
+        help="Numeric device identifier to embed (default mimics HX Stomp)",
+    )
+    parser.add_argument(
+        "--device-version",
+        type=int,
+        help="Firmware/device version integer (default mimics HX Stomp)",
+    )
+    parser.add_argument(
+        "--app-version",
+        type=int,
+        help="Application version integer stored in preset metadata",
+    )
+    parser.add_argument(
+        "--schema",
+        type=_path,
+        default=DEFAULT_SCHEMA,
+        help="JSON schema used to validate the generated preset before writing",
+    )
+    parser.add_argument(
+        "--template",
+        type=_path,
+        default=DEFAULT_TEMPLATE_PATH,
+        help="Template .hlx file used as a base when generating presets",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Generate and validate but do not write output file",
+    )
 
 
 def run_generate(args: argparse.Namespace) -> int:
     catalog = ModelCatalog(args.dataset)
     chain = load_chain_spec(args.chain)
     template = load_json_file(args.template)
-    preset, report = generate_preset(
-        chain=chain,
-        catalog=catalog,
-        template=template,
-        overrides={
-            "name": args.name,
-            "author": args.author,
-            "tempo": args.tempo,
-            "device": args.device,
-            "device_id": args.device_id,
-            "device_version": args.device_version,
-            "app_version": args.app_version,
-        },
+    return _generate_from_chain(
+        chain,
+        args,
+        catalog,
+        template,
+        default_output=lambda preset: args.chain.with_suffix(".hlx"),
     )
-    for warning in report.warnings:
-        print(f"Warning: {warning}", file=sys.stderr)
-    validator = PresetValidator(args.schema, catalog)
-    errors = validator.validate_structural(preset)
-    errors.extend(validator.validate_semantic(preset))
-
-    if errors:
-        _emit_errors(errors)
-        return 1
-
-    if args.dry_run:
-        print(json.dumps(preset, indent=2))
-        return 0
-
-    output_path = args.output
-    if output_path is None:
-        output_path = args.chain.with_suffix(".hlx")
-
-    with output_path.open("w", encoding="utf-8") as fh:
-        json.dump(preset, fh, indent=2)
-        fh.write("\n")
-
-    print(f"Wrote {output_path}")
-    return 0
 
 
 def run_validate(args: argparse.Namespace) -> int:
@@ -252,12 +248,112 @@ def run_models(args: argparse.Namespace) -> int:
     return 0
 
 
+def run_describe(args: argparse.Namespace) -> int:
+    catalog = ModelCatalog(args.dataset)
+    template = load_json_file(args.template)
+    try:
+        chain = generate_chain_from_prompt(
+            prompt=args.prompt,
+            catalog=catalog,
+            model_name=args.ollama_model,
+            endpoint=args.ollama_endpoint,
+        )
+    except LLMGenerationError as exc:
+        print(f"LLM error: {exc}", file=sys.stderr)
+        return 1
+
+    return _generate_from_chain(
+        chain,
+        args,
+        catalog,
+        template,
+        default_output=_default_describe_output,
+    )
+
+
 def _emit_errors(errors: list[Any]) -> None:
     if not errors:
         return
     print("Validation errors:", file=sys.stderr)
     for error in errors:
         print(f" - {error}", file=sys.stderr)
+
+
+def _generate_from_chain(
+    chain: dict[str, Any],
+    args: argparse.Namespace,
+    catalog: ModelCatalog,
+    template: dict[str, Any],
+    default_output: Callable[[dict[str, Any]], Path],
+) -> int:
+    preset, report = generate_preset(
+        chain=chain,
+        catalog=catalog,
+        template=template,
+        overrides={
+            "name": getattr(args, "name", None),
+            "author": getattr(args, "author", None),
+            "tempo": getattr(args, "tempo", None),
+            "device": getattr(args, "device", None),
+            "device_id": getattr(args, "device_id", None),
+            "device_version": getattr(args, "device_version", None),
+            "app_version": getattr(args, "app_version", None),
+        },
+    )
+    for warning in report.warnings:
+        print(f"Warning: {warning}", file=sys.stderr)
+    validator = PresetValidator(args.schema, catalog)
+    errors = validator.validate_structural(preset)
+    errors.extend(validator.validate_semantic(preset))
+
+    if errors:
+        _emit_errors(errors)
+        return 1
+
+    if args.dry_run:
+        print(json.dumps(preset, indent=2))
+        return 0
+
+    output_path = getattr(args, "output", None)
+    if output_path is None:
+        output_path = default_output(preset)
+
+    with output_path.open("w", encoding="utf-8") as fh:
+        json.dump(preset, fh, indent=2)
+        fh.write("\n")
+
+    print(f"Wrote {output_path}")
+    return 0
+
+
+def _default_describe_output(preset: dict[str, Any]) -> Path:
+    meta = (
+        preset.get("data", {})
+        if isinstance(preset, dict)
+        else {}
+    )
+    if isinstance(meta, dict):
+        meta_section = meta.get("meta", {}) if isinstance(meta.get("meta"), dict) else {}
+    else:
+        meta_section = {}
+    raw_name = meta_section.get("name") if isinstance(meta_section, dict) else None
+    if isinstance(raw_name, str):
+        name = raw_name
+    elif raw_name is not None:
+        name = str(raw_name)
+    else:
+        name = "described preset"
+    slug = _slugify(name)
+    return Path.cwd() / f"{slug}.hlx"
+
+
+def _slugify(text: str) -> str:
+    safe = [c.lower() if c.isalnum() else "-" for c in text]
+    slug = "".join(safe)
+    slug = slug.strip("-") or "preset"
+    while "--" in slug:
+        slug = slug.replace("--", "-")
+    return slug
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -272,6 +368,8 @@ def main(argv: list[str] | None = None) -> int:
             return run_inspect(args)
         if args.command == "models":
             return run_models(args)
+        if args.command == "describe":
+            return run_describe(args)
     except ModelCatalogError as exc:
         parser.error(str(exc))
     except ValidationError as exc:
