@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Helix Preset",
+  "type": "object",
+  "properties": {
+    "data": {
+      "type": "object",
+      "properties": {
+        "device": {
+          "type": ["string", "number"]
+        },
+        "device_version": {
+          "type": ["string", "number"]
+        },
+        "meta": {
+          "type": "object",
+          "properties": {
+            "application": { "type": "string" },
+            "appversion": { "type": ["string", "number"] },
+            "name": { "type": "string" },
+            "author": { "type": "string" },
+            "device": { "type": "string" }
+          },
+          "required": ["application", "appversion", "name"],
+          "additionalProperties": true
+        },
+        "tone": {
+          "type": "object",
+          "properties": {
+            "global": {
+              "type": "object",
+              "properties": {
+                "@tempo": { "type": "number" },
+                "@current_snapshot": { "type": ["number", "integer"] }
+              },
+              "required": ["@tempo", "@current_snapshot"],
+              "additionalProperties": true
+            },
+            "dsp0": {
+              "type": "object",
+              "properties": {
+                "inputA": {
+                  "type": "object",
+                  "required": ["@model"],
+                  "properties": {
+                    "@model": { "type": "string" }
+                  },
+                  "additionalProperties": true
+                },
+                "outputA": {
+                  "type": "object",
+                  "required": ["@model"],
+                  "properties": {
+                    "@model": { "type": "string" }
+                  },
+                  "additionalProperties": true
+                }
+              },
+              "required": ["inputA", "outputA"],
+              "additionalProperties": {
+                "type": "object",
+                "properties": {
+                  "@model": { "type": "string" },
+                  "@path": { "type": ["number", "integer"] },
+                  "@position": { "type": ["number", "integer"] },
+                  "@type": { "type": ["number", "integer"] },
+                  "@enabled": { "type": ["boolean", "number"] },
+                  "@stereo": { "type": ["boolean", "number"] }
+                },
+                "required": ["@model"],
+                "additionalProperties": true
+              }
+            }
+          },
+          "required": ["global", "dsp0"],
+          "additionalProperties": true
+        }
+      },
+      "required": ["meta", "tone"],
+      "additionalProperties": true
+    }
+  },
+  "required": ["data"],
+  "additionalProperties": true
+}
