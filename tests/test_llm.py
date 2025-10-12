@@ -29,10 +29,10 @@ def test_compose_prompt_includes_model_details(dataset_path):
     catalog = ModelCatalog(dataset_path)
     prompt = _compose_prompt("Clean tone", catalog)
 
-    assert '"based_on": "Horizon Devices Precision Drive incl Gate Range"' in prompt
-    assert '"parameters": {' in prompt
-    assert '"Drive": {' in prompt
-    assert '"default": 0.25' in prompt
+    assert "Select only the blocks that directly support the requested tone" in prompt
+    assert "Available models by category" in prompt
+    assert '"name": "Horizon Drive"' in prompt
+    assert '"key_parameters": [' in prompt
 
 
 def test_generate_chain_requires_object(monkeypatch: pytest.MonkeyPatch, dataset_path: Path):

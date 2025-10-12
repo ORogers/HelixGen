@@ -4,7 +4,7 @@ import json
 from typing import Any
 from urllib import error, request
 
-from .dataset import ModelCatalog, ModelCatalogError, ModelDefinition
+from .dataset import ModelCatalog, ModelCatalogError
 
 
 class LLMGenerationError(RuntimeError):
@@ -95,80 +95,40 @@ def _compose_prompt(user_prompt: str, catalog: ModelCatalog) -> str:
         "Return EXACTLY one JSON object compatible with hlxgen and nothing else. "
         "Do not wrap the object in an array or add leading text—the response must "
         "begin with '{' and end with '}'. The object must include a 'title' string "
-        "and a 'blocks' array. Each item in 'blocks' must be the name of a model from "
-        "the available models list provided below. Provide only the title and ordered "
-        "list of block names—parameter values will be filled automatically. The JSON "
-        "must validate against the exact schema provided. Do not include markdown "
-        "fences or commentary—output strictly JSON."
+        "and a 'blocks' array. Each entry in 'blocks' must be the display name of a "
+        "model listed below. Select only the blocks that directly support the "
+        "requested tone; avoid unrelated effects and limit the chain to the most "
+        "useful 1-8 blocks in musical order. Provide only the title and ordered list "
+        "of block names—parameter values will be filled automatically. The JSON must "
+        "validate against the exact schema provided. Do not include markdown fences or "
+        "commentary—output strictly JSON."
     )
     summary_text = json.dumps(models_summary, indent=2)
     return (
         f"{instructions}\n\n"
         f"Required JSON schema:\n{schema_json}\n\n"
         f"Example chain structure:\n{example_json}\n\n"
-        f"Available models (display_name, internal_name, category, parameters):\n{summary_text}\n\n"
+        f"Available models by category (ordered, include only relevant blocks):\n{summary_text}\n\n"
         f"User goal: {user_prompt.strip()}\n"
         "Respond with valid JSON only."
     )
 
 
-def _summarize_catalog(catalog: ModelCatalog) -> list[dict[str, Any]]:
-    summary: list[dict[str, Any]] = []
+def _summarize_catalog(catalog: ModelCatalog) -> dict[str, list[dict[str, Any]]]:
+    grouped: dict[str, list[dict[str, Any]]] = {}
     for model in sorted(catalog.models(), key=lambda m: m.display_name.lower()):
-        summary.append(
-            {
-                "display_name": model.display_name,
-                "internal_name": model.internal_name,
-                "category": model.category or "",
-                "based_on": model.based_on or "",
-                "parameters": _parameter_details(model),
-            }
-        )
-    return summary
-
-
-def _parameter_details(model: ModelDefinition) -> dict[str, dict[str, Any]]:
-    details: dict[str, dict[str, Any]] = {}
-    for name in sorted(model.parameters.keys()):
-        param = model.parameters[name]
-        info: dict[str, Any] = {}
-        if param.value_type is not None:
-            info["value_type"] = param.value_type
-        if param.display_type:
-            info["display_type"] = param.display_type
-        if param.min_value is not None:
-            info["min"] = param.min_value
-        if param.max_value is not None:
-            info["max"] = param.max_value
-        default = param.default
-        if default is None:
-            default = param.default_value()
-        if default is not None:
-            info["default"] = default
-        if param.forward_map:
-            info["options"] = dict(param.forward_map)
-        if param.reverse_map and param.reverse_map != param.forward_map:
-            info["labels"] = dict(param.reverse_map)
-        extra_keys = {
-            key: value
-            for key, value in param.raw.items()
-            if key
-            not in {
-                "parameter",
-                "symbolicID",
-                "valueType",
-                "displayType",
-                "min",
-                "max",
-                "default",
-                "forwardMap",
-                "reverseMap",
-            }
+        category = model.category or "Uncategorized"
+        info: dict[str, Any] = {
+            "name": model.display_name,
+            "internal_name": model.internal_name,
         }
-        if extra_keys:
-            info["extra"] = extra_keys
-        details[name] = info
-    return details
+        if model.based_on:
+            info["based_on"] = model.based_on
+        key_params = list(sorted(model.parameters.keys()))
+        if key_params:
+            info["key_parameters"] = key_params[:5]
+        grouped.setdefault(category, []).append(info)
+    return grouped
 
 
 def _call_ollama(endpoint: str, model_name: str, prompt: str) -> str:
