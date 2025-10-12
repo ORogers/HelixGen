@@ -45,6 +45,54 @@ def test_cli_generate_writes_preset(
     assert preset_path.exists()
 
 
+def test_cli_generate_accepts_string_blocks(
+    tmp_path: Path,
+    dataset_path: Path,
+    schema_path: Path,
+    template_path: Path,
+) -> None:
+    chain_path = tmp_path / "simple.json"
+    preset_path = tmp_path / "simple.hlx"
+    chain: dict[str, object] = {
+        "title": "Minimal Chain",
+        "author": "Tone Bot",
+        "description": "Defaults only",
+        "blocks": [
+            "Horizon Drive",
+            "Transistor Tape",
+        ],
+    }
+    _write_chain(chain_path, chain)
+
+    exit_code = cli.main(
+        [
+            "--dataset",
+            str(dataset_path),
+            "generate",
+            str(chain_path),
+            "--schema",
+            str(schema_path),
+            "--template",
+            str(template_path),
+            "--output",
+            str(preset_path),
+        ]
+    )
+
+    assert exit_code == 0
+    assert preset_path.exists()
+
+    preset = json.loads(preset_path.read_text(encoding="utf-8"))
+    meta = preset["data"]["meta"]
+    assert meta["name"] == "Minimal Chain"
+    assert meta["author"] == "Tone Bot"
+    assert meta["description"] == "Defaults only"
+
+    block0 = preset["data"]["tone"]["dsp0"]["block0"]
+    assert block0["@model"] == "HD2_DistHorizonDrive"
+    assert "Drive" in block0
+
+
 def test_cli_validate_creates_report(
     tmp_path: Path,
     dataset_path: Path,
