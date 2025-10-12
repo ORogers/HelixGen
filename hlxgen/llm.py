@@ -37,6 +37,43 @@ _EXAMPLE_CHAIN = {
 }
 
 
+_FEWSHOT_EXAMPLES: list[dict[str, Any]] = [
+    {
+        "goal": "Bright Nashville clean rhythm with subtle compression and slapback",
+        "response": {
+            "title": "Nashville Sparkle",
+            "blocks": [
+                "US Deluxe Vib",
+                "LA Studio Comp",
+                "Transistor Tape",
+            ],
+        },
+    },
+    {
+        "goal": "Modern worship ambience with lush modulation and spacious reverb",
+        "response": {
+            "title": "Shimmering Atmosphere",
+            "blocks": [
+                "US Double Nrm",
+                "Elephant Man",
+                "Plate Reverb",
+            ],
+        },
+    },
+    {
+        "goal": "Tight high-gain rhythm tone with boosted attack and noise control",
+        "response": {
+            "title": "Punchy Recto Rhythm",
+            "blocks": [
+                "Scream 808",
+                "Cali Rectifire",
+                "Hard Gate",
+            ],
+        },
+    },
+]
+
+
 def generate_chain_from_prompt(
     prompt: str,
     catalog: ModelCatalog,
@@ -89,6 +126,14 @@ def generate_chain_from_prompt(
 def _compose_prompt(user_prompt: str, catalog: ModelCatalog) -> str:
     models_summary = _summarize_catalog(catalog)
     example_json = json.dumps(_EXAMPLE_CHAIN, indent=2)
+    fewshot_sections = []
+    for index, sample in enumerate(_FEWSHOT_EXAMPLES, start=1):
+        sample_json = json.dumps(sample["response"], indent=2)
+        fewshot_sections.append(
+            "Example {index} — user goal: {goal}\nValid JSON response:\n{response}".format(
+                index=index, goal=sample["goal"], response=sample_json
+            )
+        )
     schema_json = json.dumps(_CHAIN_SCHEMA, indent=2)
     instructions = (
         "You are a tone designer that builds signal chains for the Line 6 Helix. "
@@ -108,6 +153,7 @@ def _compose_prompt(user_prompt: str, catalog: ModelCatalog) -> str:
         f"{instructions}\n\n"
         f"Required JSON schema:\n{schema_json}\n\n"
         f"Example chain structure:\n{example_json}\n\n"
+        f"Example conversions from goals to JSON:\n{chr(10).join(fewshot_sections)}\n\n"
         f"Available models by category (ordered, include only relevant blocks):\n{summary_text}\n\n"
         f"User goal: {user_prompt.strip()}\n"
         "Respond with valid JSON only."

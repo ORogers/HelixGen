@@ -8,6 +8,7 @@ import pytest
 from hlxgen.dataset import ModelCatalog
 from hlxgen.llm import (
     _CHAIN_SCHEMA,
+    _FEWSHOT_EXAMPLES,
     _compose_prompt,
     generate_chain_from_prompt,
     LLMGenerationError,
@@ -33,6 +34,16 @@ def test_compose_prompt_includes_model_details(dataset_path):
     assert "Available models by category" in prompt
     assert '"name": "Horizon Drive"' in prompt
     assert '"key_parameters": [' in prompt
+
+
+def test_compose_prompt_includes_fewshot_examples(dataset_path):
+    catalog = ModelCatalog(dataset_path)
+    prompt = _compose_prompt("Ambient", catalog)
+
+    for index, sample in enumerate(_FEWSHOT_EXAMPLES, start=1):
+        assert f"Example {index} — user goal: {sample['goal']}" in prompt
+        rendered = json.dumps(sample["response"], indent=2)
+        assert rendered in prompt
 
 
 def test_generate_chain_requires_object(monkeypatch: pytest.MonkeyPatch, dataset_path: Path):

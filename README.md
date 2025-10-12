@@ -33,6 +33,7 @@ python3 -m hlxgen --dataset helix_model_information.json generate path/to/chain.
 python3 -m hlxgen --dataset helix_model_information.json validate FullRainbowClean.hlx --schema helix-preset.schema.json
 python3 -m hlxgen --dataset helix_model_information.json models --category Distortion
 python3 -m hlxgen inspect FullRainbowClean.hlx --dataset helix_model_information.json
+python3 -m hlxgen --dataset helix_model_information.json describe "spacious worship clean" --schema helix-preset.schema.json
 ```
 
 - `generate` expects a chain definition with an ordered `blocks` list. Optional overrides (`--name`, `--author`, `--tempo`, `--device`, `--device-id`, `--device-version`, `--app-version`, `--template`, `--output`, `--dry-run`) adjust metadata and output behavior. Defaults mirror HX Stomp numeric IDs so the resulting preset imports cleanly in HX Edit/HX Stomp.
@@ -41,6 +42,17 @@ python3 -m hlxgen inspect FullRainbowClean.hlx --dataset helix_model_information
 - `validate` checks structural schema compliance and verifies every block model + parameter against the dataset. Use `--report` to write JSON results.
 - `inspect` produces a simple text table summarizing the preset signal chain.
 - `models` prints a catalog of available models sourced from the dataset, optionally filtered by `--category`.
+
+### Describe command & Ollama prompting
+
+The `describe` subcommand converts a natural-language tone request into a preset by calling a locally hosted Ollama model. The helper builds a structured prompt that now includes:
+
+- The minimal JSON schema (title + ordered block names) that the LLM must satisfy.
+- A template chain illustrating the required object layout.
+- A set of few-shot examples that pair real user goals with valid JSON responses built from the dataset’s display names.
+- A category-grouped catalog summary so the model selects only valid Helix blocks.
+
+Because the few-shot responses are drawn from actual catalog entries, the LLM sees concrete demonstrations of how to translate stylistic goals into valid block selections, which measurably improves adherence to the simplified schema. The CLI expands the returned block list into a full preset using default parameters from `helix_model_information.json`.
 
 ## Testing
 Unit tests are written with `pytest`:
