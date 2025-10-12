@@ -1,0 +1,23 @@
+{
+  "meta": {
+    "name": "Single Overdrive",
+    "application": "HX Edit",
+    "appversion": 58851328
+  },
+  "blocks": [
+    {
+      "id": "drive",
+      "model": "Horizon Drive",
+      "path": 0,
+      "position": 1,
+      "type": 0,
+      "enabled": true,
+      "parameters": {
+        "Drive": 0.75,
+        "Bright": 0.3,
+        "Gate": 0.7,
+        "Level": 0.8
+      }
+    }
+  ]
+}

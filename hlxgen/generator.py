@@ -1,0 +1,308 @@
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+import copy
+from typing import Any, Dict, List, Optional
+
+from .dataset import ModelCatalog, ModelCatalogError
+
+DEFAULT_APPLICATION = "HX Edit"
+DEFAULT_APP_VERSION = 58851328  # Matches HX Edit 3.70 numeric encoding
+DEFAULT_DEVICE_ID = 2162694  # HX Stomp / HX Edit identifiers observed in reference presets
+DEFAULT_DEVICE_VERSION = 57671680  # HX Stomp firmware encoding (e.g. 3.60)
+DEFAULT_TEMPLATE = "HXTemplate.hlx"
+
+
+@dataclass
+class GenerationReport:
+    warnings: List[str] = field(default_factory=list)
+
+    def add_warning(self, message: str) -> None:
+        self.warnings.append(message)
+
+
+def generate_preset(
+    chain: Dict[str, Any],
+    catalog: ModelCatalog,
+    template: Dict[str, Any],
+    overrides: Optional[Dict[str, Any]] = None,
+) -> tuple[Dict[str, Any], GenerationReport]:
+    overrides = overrides or {}
+    report = GenerationReport()
+
+    preset = copy.deepcopy(template)
+    data_section = preset.get("data")
+    if not isinstance(data_section, dict):
+        raise ModelCatalogError("Template must contain a top-level 'data' object.")
+    template_meta = data_section.get("meta", {})
+    template_tone = data_section.get("tone", {})
+    template_dsp0 = template_tone.get("dsp0", {})
+    template_global = template_tone.get("global", {})
+    template_device = data_section.get("device", DEFAULT_DEVICE_ID)
+    template_device_version = data_section.get("device_version", DEFAULT_DEVICE_VERSION)
+    template_app_version = template_meta.get("appversion", DEFAULT_APP_VERSION)
+
+    blocks_spec = chain.get("blocks")
+    if not isinstance(blocks_spec, list) or not blocks_spec:
+        raise ModelCatalogError(
+            "Signal chain must define a non-empty 'blocks' list."
+        )
+
+    preset_meta = dict(template_meta)
+    preset_meta.update(chain.get("meta", {}))
+    preset_name = overrides.get("name") or preset_meta.get("name") or "Generated Preset"
+    preset_author = overrides.get("author") or preset_meta.get("author")
+    device_string = overrides.get("device") or preset_meta.get("device")
+    tempo_override = overrides.get("tempo")
+
+    global_section = copy.deepcopy(template_global) if isinstance(template_global, dict) else {}
+    if "@tempo" not in global_section:
+        global_section["@tempo"] = 120.0
+    if "@current_snapshot" not in global_section:
+        global_section["@current_snapshot"] = 0
+    global_spec = chain.get("global", {})
+    if global_spec and not isinstance(global_spec, dict):
+        raise ModelCatalogError("'global' section must be an object with key/value pairs.")
+    if global_spec:
+        global_section.update(global_spec)
+    if tempo_override is not None:
+        global_section["@tempo"] = float(tempo_override)
+
+    template_input = template_dsp0.get("inputA", {})
+    template_output_main = template_dsp0.get("outputA", {})
+    template_output_send = template_dsp0.get("outputB") if isinstance(template_dsp0, dict) else None
+
+    input_override = chain.get("input")
+    if input_override is not None and not isinstance(input_override, dict):
+        raise ModelCatalogError("'input' section must be an object.")
+    input_default = {
+        "@model": "HelixStomp_AppDSPFlowInput",
+        "@input": 1,
+    }
+    input_block = _merge_dicts(
+        template_input if isinstance(template_input, dict) else {},
+        input_override if input_override is not None else input_default,
+    )
+    for key, value in input_default.items():
+        input_block.setdefault(key, value)
+
+    output_override = chain.get("output")
+    if output_override is not None and not isinstance(output_override, dict):
+        raise ModelCatalogError("'output' section must be an object.")
+    output_default = {
+        "@model": "HelixStomp_AppDSPFlowOutputMain",
+        "@output": 1,
+    }
+    output_block = _merge_dicts(
+        template_output_main if isinstance(template_output_main, dict) else {},
+        output_override if output_override is not None else output_default,
+    )
+    for key, value in output_default.items():
+        output_block.setdefault(key, value)
+
+    dsp_blocks: Dict[str, Dict[str, Any]] = copy.deepcopy(template_dsp0) if isinstance(template_dsp0, dict) else {}
+    dsp_blocks["inputA"] = input_block
+    if isinstance(template_dsp0, dict) and "inputB" in template_dsp0:
+        dsp_blocks["inputB"] = copy.deepcopy(template_dsp0["inputB"])
+
+    for index, block_spec in enumerate(blocks_spec):
+        if not isinstance(block_spec, dict):
+            raise ModelCatalogError("Each block must be a mapping of properties.")
+
+        model_identifier = block_spec.get("model")
+        if not model_identifier:
+            raise ModelCatalogError("Each block must define a 'model'.")
+        model = catalog.get(model_identifier)
+        block_id = f"block{index}"
+
+        block_payload: Dict[str, Any] = {
+            "@model": model.internal_name,
+            "@path": block_spec.get("path", 0),
+            "@position": block_spec.get("position", index),
+            "@type": block_spec.get("type", 0),
+            "@enabled": block_spec.get("enabled", True),
+            "@stereo": block_spec.get("stereo", False),
+            "@no_snapshot_bypass": bool(block_spec.get("no_snapshot_bypass", False)),
+        }
+
+        provided_parameters = block_spec.get("parameters", {})
+        if provided_parameters and not isinstance(provided_parameters, dict):
+            raise ModelCatalogError(
+                f"Block '{block_id}' parameters must be a mapping of name/value pairs."
+            )
+
+        # Apply dataset defaults
+        for param_name, definition in model.parameters.items():
+            if param_name.startswith("@"):
+                continue
+            if param_name in provided_parameters:
+                continue
+            default_value = definition.default_value()
+            if default_value is not None:
+                block_payload[param_name] = default_value
+
+        # Apply user-provided parameters
+        for param_name, value in provided_parameters.items():
+            if param_name not in model.parameters:
+                raise ModelCatalogError(
+                    f"Parameter '{param_name}' not valid for model '{model.display_name}'."
+                )
+            definition = model.parameters[param_name]
+            normalized_value = definition.normalize(value)
+            block_payload[param_name] = normalized_value
+            if definition.value_type == 1:
+                original_number = None
+                try:
+                    original_number = float(value)
+                except (TypeError, ValueError):
+                    pass
+                if (
+                    definition.min_value is not None
+                    and original_number is not None
+                    and original_number < definition.min_value
+                ):
+                    report.add_warning(
+                        f"Parameter '{param_name}' on block '{block_id}' clamped to minimum."
+                    )
+                if (
+                    definition.max_value is not None
+                    and original_number is not None
+                    and original_number > definition.max_value
+                ):
+                    report.add_warning(
+                        f"Parameter '{param_name}' on block '{block_id}' clamped to maximum."
+                    )
+
+        dsp_blocks[block_id] = block_payload
+        template_block = template_dsp0.get(block_id) if isinstance(template_dsp0, dict) else None
+        if isinstance(template_block, dict):
+            for key, value in template_block.items():
+                dsp_blocks[block_id].setdefault(key, value)
+
+    dsp_blocks["outputA"] = output_block
+    if isinstance(template_output_send, dict):
+        dsp_blocks["outputB"] = copy.deepcopy(template_output_send)
+
+    tone_section = copy.deepcopy(template_tone) if isinstance(template_tone, dict) else {}
+    tone_section["global"] = global_section
+    tone_section["dsp0"] = dsp_blocks
+
+    if "@cursor_group" in tone_section["global"]:
+        if tone_section["global"]["@cursor_group"] in {"", None} and blocks_spec:
+            tone_section["global"]["@cursor_group"] = "block0"
+
+    block_keys = [f"block{index}" for index in range(len(blocks_spec))]
+    for snap_key, snapshot in tone_section.items():
+        if not snap_key.startswith("snapshot"):
+            continue
+        if not isinstance(snapshot, dict):
+            continue
+        blocks_map = snapshot.setdefault("blocks", {})
+        dsp_map = blocks_map.setdefault("dsp0", {})
+        for block_key in block_keys:
+            dsp_map.setdefault(block_key, True)
+
+    template_default_app = template_app_version if isinstance(template_app_version, (int, float)) else DEFAULT_APP_VERSION
+    template_default_device = template_device if isinstance(template_device, (int, float)) else DEFAULT_DEVICE_ID
+    template_default_device_version = (
+        template_device_version if isinstance(template_device_version, (int, float)) else DEFAULT_DEVICE_VERSION
+    )
+
+    app_version = _coerce_numeric(
+        _first_present(
+            overrides.get("app_version"),
+            preset_meta.get("appversion"),
+            template_app_version,
+        ),
+        template_default_app,
+        "appversion",
+    )
+
+    device_id = _coerce_numeric(
+        _first_present(
+            overrides.get("device_id"),
+            chain.get("device_id"),
+            chain.get("deviceId"),
+            chain.get("device"),
+            preset_meta.get("device_id"),
+            preset_meta.get("deviceId"),
+            preset_meta.get("device"),
+            template_device,
+        ),
+        template_default_device,
+        "device",
+    )
+
+    device_version = _coerce_numeric(
+        _first_present(
+            overrides.get("device_version"),
+            chain.get("device_version"),
+            chain.get("deviceVersion"),
+            chain.get("firmware"),
+            preset_meta.get("device_version"),
+            preset_meta.get("deviceVersion"),
+            template_device_version,
+        ),
+        template_default_device_version,
+        "device_version",
+    )
+
+    meta_section = copy.deepcopy(template_meta) if isinstance(template_meta, dict) else {}
+    meta_section["application"] = preset_meta.get("application", meta_section.get("application", DEFAULT_APPLICATION))
+    meta_section["appversion"] = app_version
+    meta_section["name"] = preset_name
+    if preset_author:
+        meta_section["author"] = preset_author
+    elif "author" in meta_section and "author" not in preset_meta:
+        meta_section.pop("author", None)
+    if "build_sha" in preset_meta:
+        meta_section["build_sha"] = preset_meta["build_sha"]
+    if "modifieddate" in preset_meta:
+        meta_section["modifieddate"] = preset_meta["modifieddate"]
+    if device_string:
+        meta_section["device"] = device_string
+
+    data_section["device"] = device_id
+    data_section["device_version"] = device_version
+    data_section["meta"] = meta_section
+    data_section["tone"] = tone_section
+
+    preset["data"] = data_section
+
+    return preset, report
+
+
+def _merge_dicts(base: Optional[Dict[str, Any]], override: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    result: Dict[str, Any] = copy.deepcopy(base) if isinstance(base, dict) else {}
+    if override:
+        result.update(override)
+    return result
+
+
+def _first_present(*values: Any) -> Any:
+    for value in values:
+        if value is not None:
+            return value
+    return None
+
+
+def _coerce_numeric(value: Any, default: int, label: str) -> int:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        raise ModelCatalogError(f"{label} must be numeric, got boolean")
+    if isinstance(value, (int, float)):
+        return int(value)
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return default
+        if text.lower().startswith(("0x", "0X")):
+            try:
+                return int(text, 16)
+            except ValueError as exc:
+                raise ModelCatalogError(f"{label} value '{value}' is not a valid hexadecimal integer") from exc
+        if text.isdigit():
+            return int(text)
+        return default
+    raise ModelCatalogError(f"{label} must be numeric, got {type(value).__name__}")

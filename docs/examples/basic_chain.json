@@ -1,0 +1,64 @@
+{
+  "meta": {
+    "name": "Basic Clean Patch",
+    "application": "HX Edit",
+    "appversion": 58851328,
+    "author": "Example"
+  },
+  "global": {
+    "@tempo": 120.0
+  },
+  "input": {
+    "@model": "HelixStomp_AppDSPFlowInput",
+    "@input": 1,
+    "noiseGate": false,
+    "threshold": -60,
+    "decay": 0.5
+  },
+  "output": {
+    "@model": "HelixStomp_AppDSPFlowOutputMain",
+    "@output": 1,
+    "pan": 0.5,
+    "gain": 0.0
+  },
+  "blocks": [
+    {
+      "id": "amp",
+      "model": "US Double Nrm",
+      "path": 0,
+      "position": 0,
+      "type": 3,
+      "enabled": true,
+      "parameters": {
+        "Drive": 0.45,
+        "Bass": 0.5,
+        "Mid": 0.55,
+        "Treble": 0.6,
+        "Presence": 0.4,
+        "Sag": 0.6,
+        "Hum": 0.5,
+        "Ripple": 0.5,
+        "Bias": 0.5,
+        "BiasX": 0.5,
+        "Master": 1.0,
+        "ChVol": 1.0
+      }
+    },
+    {
+      "id": "reverb",
+      "model": "Plate Reverb",
+      "path": 0,
+      "position": 1,
+      "type": 5,
+      "enabled": true,
+      "parameters": {
+        "Decay": 0.4,
+        "Mix": 0.25,
+        "Predelay": 0.02,
+        "LowCut": 100,
+        "HighCut": 8000,
+        "Level": 0.0
+      }
+    }
+  ]
+}

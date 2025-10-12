@@ -1,0 +1,23 @@
+# Bytecode / cache
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Virtual environments
+venv/
+.venv/
+
+# Editors / OS
+.DS_Store
+.idea/
+.vscode/
+
+# Coverage / build artefacts
+.coverage
+dist/
+build/
+
+# Generated Helix presets
+*.hlx
+!HXTemplate.hlx

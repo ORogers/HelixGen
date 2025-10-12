@@ -1,0 +1,5 @@
+# Core runtime dependencies
+pyyaml>=6.0
+
+# Development / testing utilities
+pytest>=7.4

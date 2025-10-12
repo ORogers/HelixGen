@@ -1,0 +1,114 @@
+{
+  "meta": {
+    "name": "Gilmour Inspired Rig",
+    "application": "HX Edit",
+    "appversion": 58851328,
+    "author": "Example"
+  },
+  "global": {
+    "@tempo": 72.0
+  },
+  "blocks": [
+    {
+      "model": "LA Studio Comp",
+      "position": 0,
+      "parameters": {
+        "Type": "Compress",
+        "PeakReduction": 0.55,
+        "Gain": 0.45,
+        "Emphasis": 0.15,
+        "Mix": 1.0,
+        "Level": 0.0
+      }
+    },
+    {
+      "model": "Triangle Fuzz",
+      "position": 1,
+      "parameters": {
+        "Sustain": 0.78,
+        "Tone": 0.45,
+        "Level": 0.65
+      }
+    },
+    {
+      "model": "Scream 808",
+      "position": 2,
+      "parameters": {
+        "Gain": 0.35,
+        "Tone": 0.55,
+        "Level": 0.7
+      }
+    },
+    {
+      "model": "70s Chorus",
+      "position": 3,
+      "parameters": {
+        "Mode": "Chorus",
+        "ChorusIntensity": 0.38,
+        "Mix": 0.35,
+        "Level": 0.0,
+        "Headroom": 0.0
+      }
+    },
+    {
+      "model": "WhoWatt 100",
+      "position": 4,
+      "type": 3,
+      "parameters": {
+        "Drive": 0.42,
+        "Bass": 0.72,
+        "Mid": 0.45,
+        "Treble": 0.6,
+        "Presence": 0.55,
+        "ChVol": 0.85,
+        "Master": 0.9,
+        "Sag": 0.55,
+        "Hum": 0.2,
+        "Ripple": 0.25,
+        "Bias": 0.55,
+        "BiasX": 0.5
+      }
+    },
+    {
+      "model": "4x12 WhoWatt 100",
+      "position": 5,
+      "type": 4,
+      "parameters": {
+        "Mic": "121 Ribbon",
+        "Position": 0.35,
+        "Distance": 4.0,
+        "Angle": 0.0,
+        "LowCut": 70.0,
+        "HighCut": 8000.0,
+        "Level": 0.0
+      }
+    },
+    {
+      "model": "Transistor Tape",
+      "position": 6,
+      "parameters": {
+        "TempoSync1": "On",
+        "SyncSelect1": 5,
+        "Time": 0.45,
+        "Feedback": 0.42,
+        "WowFlutter": 0.25,
+        "Mix": 0.38,
+        "Spread": 0.6,
+        "Headroom": 0.0,
+        "Level": 0.0
+      }
+    },
+    {
+      "model": "Plate Reverb",
+      "position": 7,
+      "parameters": {
+        "Decay": 0.68,
+        "Predelay": 0.06,
+        "Mix": 0.42,
+        "LowCut": 120.0,
+        "HighCut": 9000.0,
+        "Level": -6.0
+      }
+    }
+  ]
+}

@@ -1,0 +1,105 @@
+{
+  "meta": {
+    "name": "Electric Gypsy Vibe",
+    "application": "HX Edit",
+    "appversion": 58851328,
+    "author": "Example"
+  },
+  "global": {
+    "@tempo": 108.0
+  },
+  "blocks": [
+    {
+      "model": "UK Wah 846",
+      "position": 0,
+      "parameters": {
+        "Pedal": 0.3,
+        "Mix": 1.0,
+        "Level": 0.0
+      }
+    },
+    {
+      "model": "Arbitrator Fuzz",
+      "position": 1,
+      "parameters": {
+        "Fuzz": 0.82,
+        "Level": 0.62
+      }
+    },
+    {
+      "model": "Ubiquitous Vibe",
+      "position": 2,
+      "parameters": {
+        "Mode": "Chorus",
+        "SyncSelect1": 8,
+        "TempoSync1": "On",
+        "Rate": 0.42,
+        "Intensity": 0.7,
+        "LampBias": 0.55,
+        "Spread": 0.8,
+        "Mix": 0.55,
+        "Level": -2.0
+      }
+    },
+    {
+      "model": "Brit Plexi Jump",
+      "position": 3,
+      "type": 3,
+      "parameters": {
+        "BrtDrive": 0.58,
+        "NrmDrive": 0.48,
+        "Bass": 0.62,
+        "Mid": 0.55,
+        "Treble": 0.6,
+        "Presence": 0.5,
+        "ChVol": 0.85,
+        "Master": 0.88,
+        "Sag": 0.55,
+        "Hum": 0.25,
+        "Ripple": 0.3,
+        "Bias": 0.52
+      }
+    },
+    {
+      "model": "4x12 Greenback 25",
+      "position": 4,
+      "type": 4,
+      "parameters": {
+        "Mic": "57 Dynamic",
+        "Position": 0.35,
+        "Distance": 3.0,
+        "Angle": 0.0,
+        "LowCut": 90.0,
+        "HighCut": 6500.0,
+        "Level": 0.0
+      }
+    },
+    {
+      "model": "Transistor Tape",
+      "position": 5,
+      "parameters": {
+        "TempoSync1": "On",
+        "SyncSelect1": 9,
+        "Time": 0.3,
+        "Feedback": 0.38,
+        "WowFlutter": 0.28,
+        "Mix": 0.32,
+        "Spread": 0.7,
+        "Headroom": 0.0,
+        "Level": -1.5
+      }
+    },
+    {
+      "model": "63 Spring Reverb",
+      "position": 6,
+      "parameters": {
+        "Decay": 2.8,
+        "Predelay": 0.12,
+        "Mix": 0.42,
+        "LowCut": 110.0,
+        "HighCut": 9000.0,
+        "Level": 0.5
+      }
+    }
+  ]
+}
