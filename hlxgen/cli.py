@@ -3,18 +3,24 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+import shutil
+import subprocess
 import sys
-from typing import Any
+from typing import Any, Callable
 
 from .dataset import ModelCatalog, ModelCatalogError
 from .generator import DEFAULT_TEMPLATE, generate_preset
 from .inspector import inspect_preset
 from .io import load_chain_spec, load_json_file
 from .validator import PresetValidator, ValidationError
+from .llm import LLMGenerationError, generate_chain_from_prompt
 
 DEFAULT_DATASET = Path("helix_model_information.json")
 DEFAULT_SCHEMA = Path("helix-preset.schema.json")
 DEFAULT_TEMPLATE_PATH = Path(DEFAULT_TEMPLATE)
+PACKAGE_ROOT = Path(__file__).resolve().parent
+REPO_ROOT = PACKAGE_ROOT.parent
+DEFAULT_UPLOAD_SCRIPT = REPO_ROOT / "scripts" / "import_helix_preset.applescript"
 
 
 def _path(path_like: str) -> Path:
@@ -43,57 +49,7 @@ def build_parser() -> argparse.ArgumentParser:
         type=_path,
         help="Path to the signal chain definition (JSON or YAML)",
     )
-    generate_parser.add_argument(
-        "--name",
-        help="Override preset name",
-    )
-    generate_parser.add_argument("--author", help="Preset author metadata")
-    generate_parser.add_argument(
-        "--tempo",
-        type=float,
-        help="Global tempo (BPM) override",
-    )
-    generate_parser.add_argument(
-        "--device",
-        help="Device string to embed into preset metadata",
-    )
-    generate_parser.add_argument(
-        "--output",
-        type=_path,
-        help="Destination .hlx path (defaults to <chain-name>.hlx)",
-    )
-    generate_parser.add_argument(
-        "--device-id",
-        type=int,
-        help="Numeric device identifier to embed (default mimics HX Stomp)",
-    )
-    generate_parser.add_argument(
-        "--device-version",
-        type=int,
-        help="Firmware/device version integer (default mimics HX Stomp)",
-    )
-    generate_parser.add_argument(
-        "--app-version",
-        type=int,
-        help="Application version integer stored in preset metadata",
-    )
-    generate_parser.add_argument(
-        "--schema",
-        type=_path,
-        default=DEFAULT_SCHEMA,
-        help="JSON schema used to validate the generated preset before writing",
-    )
-    generate_parser.add_argument(
-        "--template",
-        type=_path,
-        default=DEFAULT_TEMPLATE_PATH,
-        help="Template .hlx file used as a base when generating presets",
-    )
-    generate_parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Generate and validate but do not write output file",
-    )
+    _add_generation_arguments(generate_parser)
 
     validate_parser = subparsers.add_parser(
         "validate",
@@ -134,51 +90,131 @@ def build_parser() -> argparse.ArgumentParser:
         help="Filter models by category (case-insensitive)",
     )
 
+    describe_parser = subparsers.add_parser(
+        "describe",
+        help="Generate a preset by prompting a local Ollama model",
+    )
+    describe_parser.add_argument(
+        "prompt",
+        help="Natural language description of the desired tone",
+    )
+    describe_parser.add_argument(
+        "--ollama-model",
+        dest="ollama_model",
+        default="gpt-oss:20b",
+        help="Ollama model name to query (default: gpt-oss:20b)",
+    )
+    describe_parser.add_argument(
+        "--ollama-endpoint",
+        dest="ollama_endpoint",
+        default="http://localhost:11434/api/generate",
+        help="HTTP endpoint for the Ollama generate API",
+    )
+    describe_parser.add_argument(
+        "--llm-backend",
+        choices=("ollama", "openai"),
+        default="ollama",
+        help="Select which LLM provider to use (default: ollama)",
+    )
+    describe_parser.add_argument(
+        "--openai-model",
+        dest="openai_model",
+        default="gpt-5-mini-2025-08-07",
+        help="OpenAI model used when --llm-backend openai is selected",
+    )
+    describe_parser.add_argument(
+        "--upload",
+        action="store_true",
+        help="Run the HX Edit AppleScript uploader after generating (macOS only)",
+    )
+    describe_parser.add_argument(
+        "--upload-script",
+        dest="upload_script",
+        type=_path,
+        help=(
+            "Path to the AppleScript automation used with --upload "
+            f"(default: {DEFAULT_UPLOAD_SCRIPT})"
+        ),
+    )
+    describe_parser.add_argument(
+        "--upload-mode",
+        choices=("auto", "manual"),
+        default="auto",
+        help=(
+            "Controls how the uploader chooses the target slot. "
+            "'auto' overwrites the first preset slot, 'manual' pauses so you can pick."
+        ),
+    )
+    _add_generation_arguments(describe_parser)
+
     return parser
+
+
+def _add_generation_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--name",
+        help="Override preset name",
+    )
+    parser.add_argument("--author", help="Preset author metadata")
+    parser.add_argument(
+        "--tempo",
+        type=float,
+        help="Global tempo (BPM) override",
+    )
+    parser.add_argument(
+        "--device",
+        help="Device string to embed into preset metadata",
+    )
+    parser.add_argument(
+        "--output",
+        type=_path,
+        help="Destination .hlx path",
+    )
+    parser.add_argument(
+        "--device-id",
+        type=int,
+        help="Numeric device identifier to embed (default mimics HX Stomp)",
+    )
+    parser.add_argument(
+        "--device-version",
+        type=int,
+        help="Firmware/device version integer (default mimics HX Stomp)",
+    )
+    parser.add_argument(
+        "--app-version",
+        type=int,
+        help="Application version integer stored in preset metadata",
+    )
+    parser.add_argument(
+        "--schema",
+        type=_path,
+        default=DEFAULT_SCHEMA,
+        help="JSON schema used to validate the generated preset before writing",
+    )
+    parser.add_argument(
+        "--template",
+        type=_path,
+        default=DEFAULT_TEMPLATE_PATH,
+        help="Template .hlx file used as a base when generating presets",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Generate and validate but do not write output file",
+    )
 
 
 def run_generate(args: argparse.Namespace) -> int:
     catalog = ModelCatalog(args.dataset)
     chain = load_chain_spec(args.chain)
     template = load_json_file(args.template)
-    preset, report = generate_preset(
-        chain=chain,
-        catalog=catalog,
-        template=template,
-        overrides={
-            "name": args.name,
-            "author": args.author,
-            "tempo": args.tempo,
-            "device": args.device,
-            "device_id": args.device_id,
-            "device_version": args.device_version,
-            "app_version": args.app_version,
-        },
+    return _generate_from_chain(
+        chain,
+        args,
+        catalog,
+        template,
+        default_output=lambda preset: args.chain.with_suffix(".hlx"),
     )
-    for warning in report.warnings:
-        print(f"Warning: {warning}", file=sys.stderr)
-    validator = PresetValidator(args.schema, catalog)
-    errors = validator.validate_structural(preset)
-    errors.extend(validator.validate_semantic(preset))
-
-    if errors:
-        _emit_errors(errors)
-        return 1
-
-    if args.dry_run:
-        print(json.dumps(preset, indent=2))
-        return 0
-
-    output_path = args.output
-    if output_path is None:
-        output_path = args.chain.with_suffix(".hlx")
-
-    with output_path.open("w", encoding="utf-8") as fh:
-        json.dump(preset, fh, indent=2)
-        fh.write("\n")
-
-    print(f"Wrote {output_path}")
-    return 0
 
 
 def run_validate(args: argparse.Namespace) -> int:
@@ -252,12 +288,163 @@ def run_models(args: argparse.Namespace) -> int:
     return 0
 
 
+def run_describe(args: argparse.Namespace) -> int:
+    catalog = ModelCatalog(args.dataset)
+    template = load_json_file(args.template)
+    backend = getattr(args, "llm_backend", "ollama") or "ollama"
+    try:
+        chain = generate_chain_from_prompt(
+            prompt=args.prompt,
+            catalog=catalog,
+            llm_model=args.ollama_model,
+            endpoint=args.ollama_endpoint,
+            backend=backend,
+            openai_model=getattr(args, "openai_model", None),
+        )
+    except LLMGenerationError as exc:
+        print(f"LLM error: {exc}", file=sys.stderr)
+        return 1
+
+    post_write: Callable[[Path], None] | None = None
+    if getattr(args, "upload", False):
+        if sys.platform != "darwin":
+            print("--upload is only supported on macOS.", file=sys.stderr)
+            return 1
+        script_path = args.upload_script or DEFAULT_UPLOAD_SCRIPT
+        upload_mode = (getattr(args, "upload_mode", "auto") or "auto").lower()
+
+        def _post_write(output_path: Path) -> None:
+            _upload_via_script(script_path, output_path, upload_mode)
+            print(
+                f"Triggered HX Edit upload for {output_path} "
+                f"(mode: {upload_mode})"
+            )
+
+        post_write = _post_write
+
+    return _generate_from_chain(
+        chain,
+        args,
+        catalog,
+        template,
+        default_output=_default_describe_output,
+        post_write=post_write,
+    )
+
+
 def _emit_errors(errors: list[Any]) -> None:
     if not errors:
         return
     print("Validation errors:", file=sys.stderr)
     for error in errors:
         print(f" - {error}", file=sys.stderr)
+
+
+def _generate_from_chain(
+    chain: dict[str, Any],
+    args: argparse.Namespace,
+    catalog: ModelCatalog,
+    template: dict[str, Any],
+    default_output: Callable[[dict[str, Any]], Path],
+    post_write: Callable[[Path], None] | None = None,
+) -> int:
+    preset, report = generate_preset(
+        chain=chain,
+        catalog=catalog,
+        template=template,
+        overrides={
+            "name": getattr(args, "name", None),
+            "author": getattr(args, "author", None),
+            "tempo": getattr(args, "tempo", None),
+            "device": getattr(args, "device", None),
+            "device_id": getattr(args, "device_id", None),
+            "device_version": getattr(args, "device_version", None),
+            "app_version": getattr(args, "app_version", None),
+        },
+    )
+    for warning in report.warnings:
+        print(f"Warning: {warning}", file=sys.stderr)
+    validator = PresetValidator(args.schema, catalog)
+    errors = validator.validate_structural(preset)
+    errors.extend(validator.validate_semantic(preset))
+
+    if errors:
+        _emit_errors(errors)
+        return 1
+
+    if args.dry_run:
+        print(json.dumps(preset, indent=2))
+        return 0
+
+    output_path = getattr(args, "output", None)
+    if output_path is None:
+        output_path = default_output(preset)
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with output_path.open("w", encoding="utf-8") as fh:
+        json.dump(preset, fh, indent=2)
+        fh.write("\n")
+
+    print(f"Wrote {output_path}")
+    if post_write:
+        try:
+            post_write(output_path)
+        except Exception as exc:
+            print(f"Upload failed: {exc}", file=sys.stderr)
+            return 1
+
+    return 0
+
+
+def _default_describe_output(preset: dict[str, Any]) -> Path:
+    meta = (
+        preset.get("data", {})
+        if isinstance(preset, dict)
+        else {}
+    )
+    if isinstance(meta, dict):
+        meta_section = meta.get("meta", {}) if isinstance(meta.get("meta"), dict) else {}
+    else:
+        meta_section = {}
+    raw_name = meta_section.get("name") if isinstance(meta_section, dict) else None
+    if isinstance(raw_name, str):
+        name = raw_name
+    elif raw_name is not None:
+        name = str(raw_name)
+    else:
+        name = "described preset"
+    slug = _slugify(name)
+    return Path.cwd() / "generated-presets" / f"{slug}.hlx"
+
+
+def _slugify(text: str) -> str:
+    safe = [c.lower() if c.isalnum() else "-" for c in text]
+    slug = "".join(safe)
+    slug = slug.strip("-") or "preset"
+    while "--" in slug:
+        slug = slug.replace("--", "-")
+    return slug
+
+
+def _upload_via_script(
+    script_path: Path,
+    preset_path: Path,
+    mode: str = "auto",
+) -> None:
+    script_path = Path(script_path)
+    if not script_path.exists():
+        raise FileNotFoundError(
+            f"Upload script not found at {script_path}. "
+            "Use --upload-script to supply the correct path."
+        )
+    osascript = shutil.which("osascript")
+    if osascript is None:
+        raise RuntimeError("osascript not found on PATH; cannot run upload script.")
+    normalized_mode = (mode or "auto").lower()
+    subprocess.run(
+        [osascript, str(script_path), str(Path(preset_path)), normalized_mode],
+        check=True,
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -272,6 +459,8 @@ def main(argv: list[str] | None = None) -> int:
             return run_inspect(args)
         if args.command == "models":
             return run_models(args)
+        if args.command == "describe":
+            return run_describe(args)
     except ModelCatalogError as exc:
         parser.error(str(exc))
     except ValidationError as exc:

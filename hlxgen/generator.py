@@ -49,8 +49,43 @@ def generate_preset(
             "Signal chain must define a non-empty 'blocks' list."
         )
 
+    normalized_blocks: List[Dict[str, Any]] = []
+    for entry in blocks_spec:
+        if isinstance(entry, dict):
+            normalized_blocks.append(entry)
+            continue
+        if isinstance(entry, str):
+            stripped = entry.strip()
+            if not stripped:
+                raise ModelCatalogError(
+                    "Block entries must be model names or mapping objects."
+                )
+            normalized_blocks.append({"model": stripped})
+            continue
+        raise ModelCatalogError(
+            "Each block must be a mapping of properties or a model name string."
+        )
+
+    blocks_spec = normalized_blocks
+
+    chain_meta: Dict[str, Any] = {}
+    if isinstance(chain.get("meta"), dict):
+        chain_meta.update(chain["meta"])
+
+    title_value = chain.get("title")
+    if isinstance(title_value, str) and title_value.strip():
+        chain_meta.setdefault("name", title_value.strip())
+
+    author_value = chain.get("author")
+    if isinstance(author_value, str) and author_value.strip():
+        chain_meta.setdefault("author", author_value.strip())
+
+    description_value = chain.get("description")
+    if isinstance(description_value, str) and description_value.strip():
+        chain_meta.setdefault("description", description_value.strip())
+
     preset_meta = dict(template_meta)
-    preset_meta.update(chain.get("meta", {}))
+    preset_meta.update(chain_meta)
     preset_name = overrides.get("name") or preset_meta.get("name") or "Generated Preset"
     preset_author = overrides.get("author") or preset_meta.get("author")
     device_string = overrides.get("device") or preset_meta.get("device")
@@ -325,6 +360,10 @@ def generate_preset(
         meta_section["author"] = preset_author
     elif "author" in meta_section and "author" not in preset_meta:
         meta_section.pop("author", None)
+    if "description" in chain_meta:
+        meta_section["description"] = chain_meta["description"]
+    elif "description" in meta_section and "description" not in chain_meta:
+        meta_section.pop("description", None)
     if "build_sha" in preset_meta:
         meta_section["build_sha"] = preset_meta["build_sha"]
     if "modifieddate" in preset_meta:
