@@ -6,6 +6,7 @@
 - Generate schema-compliant `.hlx` presets from JSON or YAML chain descriptions.
 - Validate existing presets against a JSON schema and the bundled model catalog.
 - Inspect presets and display an ordered summary of blocks, model types, and real-world references.
+- Describe tones in natural language and have presets built automatically via either a local Ollama model or the OpenAI Responses API.
 
 ## Project Layout
 - `hlxgen/` — Python package containing the CLI (`cli.py`) and supporting modules:
@@ -19,11 +20,10 @@
 - `tests/` — Pytest-based unit suite covering generation, validation, CLI flows, and dataset integration.
 
 ## Usage
-Install dependencies (Python 3.9+). If you plan on using YAML chain files or running tests:
+Install dependencies (Python 3.9+):
 
 ```bash
-python3 -m pip install -r requirements.txt  # if present
-python3 -m pip install pyyaml pytest        # optional helpers
+python3 -m pip install -r requirements.txt
 ```
 
 Run the CLI directly:
@@ -34,6 +34,7 @@ python3 -m hlxgen --dataset helix_model_information.json validate FullRainbowCle
 python3 -m hlxgen --dataset helix_model_information.json models --category Distortion
 python3 -m hlxgen inspect FullRainbowClean.hlx --dataset helix_model_information.json
 python3 -m hlxgen --dataset helix_model_information.json describe "spacious worship clean" --schema helix-preset.schema.json
+python3 -m hlxgen describe "tight prog metal rhythm" --llm-backend openai --openai-model gpt-4o-mini
 ```
 
 - `generate` expects a chain definition with an ordered `blocks` list. Optional overrides (`--name`, `--author`, `--tempo`, `--device`, `--device-id`, `--device-version`, `--app-version`, `--template`, `--output`, `--dry-run`) adjust metadata and output behavior. Defaults mirror HX Stomp numeric IDs so the resulting preset imports cleanly in HX Edit/HX Stomp.
@@ -43,16 +44,71 @@ python3 -m hlxgen --dataset helix_model_information.json describe "spacious wors
 - `inspect` produces a simple text table summarizing the preset signal chain.
 - `models` prints a catalog of available models sourced from the dataset, optionally filtered by `--category`.
 
-### Describe command & Ollama prompting
+### Signal Chain Formats
 
-The `describe` subcommand converts a natural-language tone request into a preset by calling a locally hosted Ollama model. The helper builds a structured prompt that now includes:
+`hlxgen generate` accepts two complementary specification styles:
+
+- **Simple format** — ideal for quick experiments or LLM output. Provide a title plus an ordered list of model display names. Optional `author` and `description` fields map directly into preset metadata.
+
+  ```json
+  {
+    "title": "Sparkling Clean",
+    "blocks": [
+      "US Double Nrm",
+      "LA Studio Comp",
+      "Plate Reverb"
+    ]
+  }
+  ```
+
+- **Full format** — mirrors the internal Helix preset structure. You can override `meta`, `global`, `input`, `output`, individual block settings, footswitch assignments, and more. Any omitted values fall back to defaults pulled from the template and dataset.
+
+  ```json
+  {
+    "meta": {
+      "name": "Basic Clean Patch",
+      "author": "Example"
+    },
+    "global": { "@tempo": 120.0 },
+    "input": { "@model": "HelixStomp_AppDSPFlowInput", "@input": 1 },
+    "output": { "@model": "HelixStomp_AppDSPFlowOutputMain", "@output": 1 },
+    "blocks": [
+      {
+        "model": "US Double Nrm",
+        "parameters": {
+          "Drive": 0.45,
+          "Bass": 0.5,
+          "Treble": 0.6
+        }
+      },
+      {
+        "model": "Plate Reverb",
+        "parameters": {
+          "Decay": 0.4,
+          "Mix": 0.25
+        }
+      }
+    ]
+  }
+  ```
+
+Both formats can be expressed as JSON or YAML. During generation, simple strings are expanded into structured blocks with validated parameter defaults. See `docs/examples/` for additional templates.
+
+### Describe Command & LLM Prompting
+
+The `describe` subcommand converts a natural-language tone request into a preset by calling your chosen LLM backend. The helper builds a structured prompt that includes:
 
 - The minimal JSON schema (title + ordered block names) that the LLM must satisfy.
 - A template chain illustrating the required object layout.
 - A set of few-shot examples that pair real user goals with valid JSON responses built from the dataset’s display names.
 - A category-grouped catalog summary so the model selects only valid Helix blocks.
 
-Because the few-shot responses are drawn from actual catalog entries, the LLM sees concrete demonstrations of how to translate stylistic goals into valid block selections, which measurably improves adherence to the simplified schema. The CLI expands the returned block list into a full preset using default parameters from `helix_model_information.json`.
+You can pick between two providers:
+
+- `--llm-backend ollama` *(default)* — sends prompts to a locally hosted Ollama server via `--ollama-endpoint` and `--ollama-model`.
+- `--llm-backend openai` — uses the OpenAI Responses API. Set `OPENAI_API_KEY` in your environment (it can be read automatically from a `.env` file in the project tree) and specify an `--openai-model` such as `gpt-4o-mini`.
+
+Because the few-shot responses are drawn from actual catalog entries, the LLM sees concrete demonstrations of how to translate stylistic goals into valid block selections, which measurably improves adherence to the simplified schema. The CLI expands the returned block list into a full preset using default parameters from `helix_model_information.json`. Parameter refinement for each block also runs through the same backend, so swapping providers affects both block choice and control values.
 
 ## Testing
 Unit tests are written with `pytest`:

@@ -102,7 +102,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--ollama-model",
         dest="ollama_model",
         default="gpt-oss:20b",
-        help="Ollama model name to query (default: llama3)",
+        help="Ollama model name to query (default: gpt-oss:20b)",
     )
     describe_parser.add_argument(
         "--ollama-endpoint",
