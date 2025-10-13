@@ -248,6 +248,115 @@ def test_cli_describe_generates_from_prompt(
     assert preset_path.exists()
 
 
+def test_cli_describe_upload_runs_script(
+    tmp_path: Path,
+    dataset_path: Path,
+    schema_path: Path,
+    template_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    preset_path = tmp_path / "upload-target.hlx"
+    script_path = tmp_path / "import.applescript"
+    script_path.write_text("-- dummy", encoding="utf-8")
+
+    def fake_urlopen(request_obj: Any):
+        class _Response:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self) -> bytes:
+                chain = {"title": "Upload Tone", "blocks": ["Horizon Drive"]}
+                payload = {"response": json.dumps(chain), "done": True}
+                return json.dumps(payload).encode("utf-8")
+
+        return _Response()
+
+    monkeypatch.setattr("hlxgen.llm.request.urlopen", fake_urlopen)
+    monkeypatch.setattr("hlxgen.cli.sys.platform", "darwin")
+
+    captured_args: dict[str, Any] = {}
+
+    def fake_upload(script: Path, preset: Path) -> None:
+        captured_args["script"] = script
+        captured_args["preset"] = preset
+
+    monkeypatch.setattr("hlxgen.cli._upload_via_script", fake_upload)
+
+    exit_code = cli.main(
+        [
+            "--dataset",
+            str(dataset_path),
+            "describe",
+            "Warm fuzzy lead sound",
+            "--schema",
+            str(schema_path),
+            "--template",
+            str(template_path),
+            "--output",
+            str(preset_path),
+            "--ollama-model",
+            "fake-model",
+            "--upload",
+            "--upload-script",
+            str(script_path),
+        ]
+    )
+
+    assert exit_code == 0
+    assert captured_args["script"] == script_path
+    assert captured_args["preset"] == preset_path
+
+
+def test_cli_describe_default_output_directory(
+    tmp_path: Path,
+    dataset_path: Path,
+    schema_path: Path,
+    template_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    generated_dir = tmp_path / "generated-presets"
+
+    def fake_urlopen(_: Any):
+        class _Response:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self) -> bytes:
+                chain = {"title": "Prompted Tone", "blocks": ["Horizon Drive"]}
+                payload = {"response": json.dumps(chain), "done": True}
+                return json.dumps(payload).encode("utf-8")
+
+        return _Response()
+
+    monkeypatch.setattr("hlxgen.llm.request.urlopen", fake_urlopen)
+    monkeypatch.chdir(tmp_path)
+
+    exit_code = cli.main(
+        [
+            "--dataset",
+            str(dataset_path),
+            "describe",
+            "Warm fuzzy lead sound",
+            "--schema",
+            str(schema_path),
+            "--template",
+            str(template_path),
+            "--ollama-model",
+            "fake-model",
+        ]
+    )
+
+    assert exit_code == 0
+    presets = list(generated_dir.glob("*.hlx"))
+    assert len(presets) == 1
+
+
 def test_cli_describe_reports_invalid_llm_json(
     dataset_path: Path,
     schema_path: Path,

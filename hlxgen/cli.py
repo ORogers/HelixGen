@@ -3,6 +3,8 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+import shutil
+import subprocess
 import sys
 from typing import Any, Callable
 
@@ -16,6 +18,9 @@ from .llm import LLMGenerationError, generate_chain_from_prompt
 DEFAULT_DATASET = Path("helix_model_information.json")
 DEFAULT_SCHEMA = Path("helix-preset.schema.json")
 DEFAULT_TEMPLATE_PATH = Path(DEFAULT_TEMPLATE)
+PACKAGE_ROOT = Path(__file__).resolve().parent
+REPO_ROOT = PACKAGE_ROOT.parent
+DEFAULT_UPLOAD_SCRIPT = REPO_ROOT / "scripts" / "import_helix_preset.applescript"
 
 
 def _path(path_like: str) -> Path:
@@ -104,6 +109,29 @@ def build_parser() -> argparse.ArgumentParser:
         dest="ollama_endpoint",
         default="http://localhost:11434/api/generate",
         help="HTTP endpoint for the Ollama generate API",
+    )
+    describe_parser.add_argument(
+        "--upload",
+        action="store_true",
+        help="Run the HX Edit AppleScript uploader after generating (macOS only)",
+    )
+    describe_parser.add_argument(
+        "--upload-script",
+        dest="upload_script",
+        type=_path,
+        help=(
+            "Path to the AppleScript automation used with --upload "
+            f"(default: {DEFAULT_UPLOAD_SCRIPT})"
+        ),
+    )
+    describe_parser.add_argument(
+        "--upload-mode",
+        choices=("auto", "manual"),
+        default="auto",
+        help=(
+            "Controls how the uploader chooses the target slot. "
+            "'auto' overwrites the first preset slot, 'manual' pauses so you can pick."
+        ),
     )
     _add_generation_arguments(describe_parser)
 
@@ -262,12 +290,30 @@ def run_describe(args: argparse.Namespace) -> int:
         print(f"LLM error: {exc}", file=sys.stderr)
         return 1
 
+    post_write: Callable[[Path], None] | None = None
+    if getattr(args, "upload", False):
+        if sys.platform != "darwin":
+            print("--upload is only supported on macOS.", file=sys.stderr)
+            return 1
+        script_path = args.upload_script or DEFAULT_UPLOAD_SCRIPT
+        upload_mode = (getattr(args, "upload_mode", "auto") or "auto").lower()
+
+        def _post_write(output_path: Path) -> None:
+            _upload_via_script(script_path, output_path, upload_mode)
+            print(
+                f"Triggered HX Edit upload for {output_path} "
+                f"(mode: {upload_mode})"
+            )
+
+        post_write = _post_write
+
     return _generate_from_chain(
         chain,
         args,
         catalog,
         template,
         default_output=_default_describe_output,
+        post_write=post_write,
     )
 
 
@@ -285,6 +331,7 @@ def _generate_from_chain(
     catalog: ModelCatalog,
     template: dict[str, Any],
     default_output: Callable[[dict[str, Any]], Path],
+    post_write: Callable[[Path], None] | None = None,
 ) -> int:
     preset, report = generate_preset(
         chain=chain,
@@ -318,11 +365,19 @@ def _generate_from_chain(
     if output_path is None:
         output_path = default_output(preset)
 
+    output_path.parent.mkdir(parents=True, exist_ok=True)
     with output_path.open("w", encoding="utf-8") as fh:
         json.dump(preset, fh, indent=2)
         fh.write("\n")
 
     print(f"Wrote {output_path}")
+    if post_write:
+        try:
+            post_write(output_path)
+        except Exception as exc:
+            print(f"Upload failed: {exc}", file=sys.stderr)
+            return 1
+
     return 0
 
 
@@ -344,7 +399,7 @@ def _default_describe_output(preset: dict[str, Any]) -> Path:
     else:
         name = "described preset"
     slug = _slugify(name)
-    return Path.cwd() / f"{slug}.hlx"
+    return Path.cwd() / "generated-presets" / f"{slug}.hlx"
 
 
 def _slugify(text: str) -> str:
@@ -354,6 +409,27 @@ def _slugify(text: str) -> str:
     while "--" in slug:
         slug = slug.replace("--", "-")
     return slug
+
+
+def _upload_via_script(
+    script_path: Path,
+    preset_path: Path,
+    mode: str = "auto",
+) -> None:
+    script_path = Path(script_path)
+    if not script_path.exists():
+        raise FileNotFoundError(
+            f"Upload script not found at {script_path}. "
+            "Use --upload-script to supply the correct path."
+        )
+    osascript = shutil.which("osascript")
+    if osascript is None:
+        raise RuntimeError("osascript not found on PATH; cannot run upload script.")
+    normalized_mode = (mode or "auto").lower()
+    subprocess.run(
+        [osascript, str(script_path), str(Path(preset_path)), normalized_mode],
+        check=True,
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
