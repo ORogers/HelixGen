@@ -8,6 +8,8 @@ __pycache__/
 venv/
 .venv/
 
+.env
+
 # Editors / OS
 .DS_Store
 .idea/

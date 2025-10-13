@@ -111,6 +111,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="HTTP endpoint for the Ollama generate API",
     )
     describe_parser.add_argument(
+        "--llm-backend",
+        choices=("ollama", "openai"),
+        default="ollama",
+        help="Select which LLM provider to use (default: ollama)",
+    )
+    describe_parser.add_argument(
+        "--openai-model",
+        dest="openai_model",
+        default="gpt-5-mini-2025-08-07",
+        help="OpenAI model used when --llm-backend openai is selected",
+    )
+    describe_parser.add_argument(
         "--upload",
         action="store_true",
         help="Run the HX Edit AppleScript uploader after generating (macOS only)",
@@ -279,12 +291,15 @@ def run_models(args: argparse.Namespace) -> int:
 def run_describe(args: argparse.Namespace) -> int:
     catalog = ModelCatalog(args.dataset)
     template = load_json_file(args.template)
+    backend = getattr(args, "llm_backend", "ollama") or "ollama"
     try:
         chain = generate_chain_from_prompt(
             prompt=args.prompt,
             catalog=catalog,
             llm_model=args.ollama_model,
             endpoint=args.ollama_endpoint,
+            backend=backend,
+            openai_model=getattr(args, "openai_model", None),
         )
     except LLMGenerationError as exc:
         print(f"LLM error: {exc}", file=sys.stderr)

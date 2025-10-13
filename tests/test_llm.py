@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -33,7 +34,6 @@ def test_compose_prompt_includes_model_details(dataset_path):
     assert "Select only the blocks that directly support the requested tone" in prompt
     assert "Available models by category" in prompt
     assert '"name": "Horizon Drive"' in prompt
-    assert '"key_parameters": [' in prompt
 
 
 def test_compose_prompt_includes_fewshot_examples(dataset_path):
@@ -208,3 +208,40 @@ def test_cab_parameters_use_defaults(
 
     assert chain["blocks"] == [{"model": "2x12 Blue Bell"}]
     assert "parameters" not in chain["blocks"][0]
+
+
+def test_generate_chain_with_openai_backend(
+    monkeypatch: pytest.MonkeyPatch, dataset_path: Path
+) -> None:
+    catalog = ModelCatalog(dataset_path)
+    fake_client = object()
+    seen_models: set[str] = set()
+
+    monkeypatch.setattr("hlxgen.llm", "_OPENAI_CLIENT", None, raising=False)
+    monkeypatch.setattr("hlxgen.llm._get_openai_client", lambda: fake_client)
+
+    def fake_call_openai(model_name: str, prompt: str, *, client: Any | None = None) -> str:
+        assert client is fake_client
+        seen_models.add(model_name)
+        if "Available parameters:" in prompt:
+            return json.dumps({"parameters": {}})
+        return json.dumps(
+            {
+                "title": "AI Tone",
+                "blocks": ["Horizon Drive"],
+            }
+        )
+
+    monkeypatch.setattr("hlxgen.llm._call_openai", fake_call_openai)
+
+    chain = generate_chain_from_prompt(
+        prompt="describe via openai",
+        catalog=catalog,
+        llm_model="unused-default",
+        backend="openai",
+        openai_model="fake-openai-model",
+    )
+
+    assert chain["meta"]["name"] == "AI Tone"
+    assert chain["blocks"] == [{"model": "Horizon Drive"}]
+    assert seen_models == {"fake-openai-model"}

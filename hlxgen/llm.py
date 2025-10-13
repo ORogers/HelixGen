@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Iterable
+import os
+from pathlib import Path
+from typing import Any, Callable, Iterable
 from urllib import error, request
 
 from .dataset import ModelCatalog, ModelCatalogError
@@ -78,18 +80,29 @@ if not logger.handlers:
 logger.setLevel(logging.INFO)
 logger.propagate = False
 
+_OPENAI_CLIENT: Any | None = None
+
 
 def generate_chain_from_prompt(
     prompt: str,
     catalog: ModelCatalog,
     llm_model: str,
     endpoint: str = "http://localhost:11434/api/generate",
+    *,
+    backend: str = "ollama",
+    openai_model: str | None = None,
 ) -> dict[str, Any]:
     """Return a signal chain dictionary generated from a natural-language prompt."""
 
+    call_llm = _build_llm_caller(
+        backend=backend,
+        default_model=llm_model,
+        endpoint=endpoint,
+        openai_model=openai_model,
+    )
     logger.info("Requesting initial block selection for prompt: %s", prompt)
     full_prompt = _compose_prompt(prompt, catalog)
-    response_text = _call_ollama(endpoint, llm_model, full_prompt)
+    response_text = call_llm(full_prompt)
     spec = _parse_chain(response_text)
     if not isinstance(spec, dict):
         raise LLMGenerationError(
@@ -139,13 +152,43 @@ def generate_chain_from_prompt(
     if resolved_models:
         _populate_block_parameters_with_llm(
             prompt=prompt,
-            llm_model=llm_model,
-            endpoint=endpoint,
+            call_llm=call_llm,
             chain=chain,
             models=resolved_models,
         )
 
     return chain
+
+
+def _build_llm_caller(
+    *,
+    backend: str,
+    default_model: str,
+    endpoint: str,
+    openai_model: str | None,
+) -> Callable[[str], str]:
+    """Return a callable that executes prompts against the requested LLM backend."""
+
+    backend_key = (backend or "ollama").strip().lower()
+    if backend_key == "openai":
+        model_name = (openai_model or default_model or "").strip()
+        if not model_name:
+            raise LLMGenerationError("OpenAI backend requires a model name")
+        client = _get_openai_client()
+
+        def _call(prompt: str) -> str:
+            return _call_openai(model_name, prompt, client=client)
+
+        return _call
+
+    if backend_key in ("ollama", ""):
+
+        def _call(prompt: str) -> str:
+            return _call_ollama(endpoint, default_model, prompt)
+
+        return _call
+
+    raise LLMGenerationError(f"Unsupported LLM backend '{backend}'")
 
 
 def _compose_prompt(user_prompt: str, catalog: ModelCatalog) -> str:
@@ -266,6 +309,173 @@ def _call_ollama(endpoint: str, model_name: str, prompt: str) -> str:
     return response_text
 
 
+def _call_openai(model_name: str, prompt: str, *, client: Any | None = None) -> str:
+    client = client or _get_openai_client()
+    try:
+        response = client.responses.create(
+            model=model_name,
+            input=prompt,
+        )
+    except Exception as exc:  # pragma: no cover - network errors not hit in tests
+        raise LLMGenerationError(f"OpenAI request failed: {exc}") from exc
+    text = _extract_text_from_openai_response(response)
+    if not text:
+        raise LLMGenerationError("OpenAI response did not contain text output")
+    return text
+
+
+def _extract_text_from_openai_response(response: Any) -> str | None:
+    text = getattr(response, "output_text", None)
+    if isinstance(text, str) and text.strip():
+        return text
+
+    output = getattr(response, "output", None)
+    if isinstance(output, list):
+        collected: list[str] = []
+        for item in output:
+            content = getattr(item, "content", None)
+            if isinstance(content, list):
+                for part in content:
+                    if isinstance(part, dict) and part.get("type") == "output_text":
+                        text_value = part.get("text")
+                    else:
+                        text_value = part.get("text") if isinstance(part, dict) else None
+                    if isinstance(text_value, str):
+                        collected.append(text_value)
+            elif isinstance(content, dict):
+                text_value = content.get("text")
+                if isinstance(text_value, str):
+                    collected.append(text_value)
+        if collected:
+            return "".join(collected).strip()
+
+    if hasattr(response, "choices"):
+        choices = getattr(response, "choices")
+        if isinstance(choices, list) and choices:
+            message = getattr(choices[0], "message", None)
+            if message is not None:
+                content = getattr(message, "content", None)
+                if isinstance(content, str) and content.strip():
+                    return content
+                if isinstance(content, list):
+                    parts: list[str] = []
+                    for part in content:
+                        if isinstance(part, dict) and part.get("type") == "text":
+                            part_text = part.get("text")
+                            if isinstance(part_text, str):
+                                parts.append(part_text)
+                    if parts:
+                        return "".join(parts).strip()
+
+    if hasattr(response, "model_dump"):
+        try:
+            data = response.model_dump()
+        except Exception:  # pragma: no cover - defensive
+            data = None
+        if isinstance(data, dict):
+            output_text = data.get("output_text")
+            if isinstance(output_text, str) and output_text.strip():
+                return output_text
+            outputs = data.get("output")
+            if isinstance(outputs, list):
+                parts = []
+                for item in outputs:
+                    if isinstance(item, dict):
+                        content = item.get("content")
+                        if isinstance(content, list):
+                            for part in content:
+                                if isinstance(part, dict):
+                                    value = part.get("text")
+                                    if isinstance(value, str):
+                                        parts.append(value)
+                if parts:
+                    return "".join(parts).strip()
+    return None
+
+
+def _get_openai_client() -> Any:
+    global _OPENAI_CLIENT
+    if _OPENAI_CLIENT is not None:
+        return _OPENAI_CLIENT
+    try:
+        from openai import OpenAI
+    except ImportError as exc:  # pragma: no cover - import failure tested indirectly
+        raise LLMGenerationError(
+            "OpenAI backend requires the 'openai' package. Install it to use --llm-backend openai."
+        ) from exc
+    api_key = _ensure_openai_api_key()
+    try:
+        _OPENAI_CLIENT = OpenAI(api_key=api_key)
+    except Exception as exc:  # pragma: no cover - defensive
+        raise LLMGenerationError(f"Failed to initialize OpenAI client: {exc}") from exc
+    return _OPENAI_CLIENT
+
+
+def _ensure_openai_api_key() -> str:
+    existing = os.getenv("OPENAI_API_KEY")
+    if existing:
+        return existing
+    loaded = _load_dotenv_value("OPENAI_API_KEY")
+    if loaded:
+        os.environ.setdefault("OPENAI_API_KEY", loaded)
+        return loaded
+    raise LLMGenerationError(
+        "OpenAI backend selected but OPENAI_API_KEY was not found in the environment or .env file."
+    )
+
+
+def _load_dotenv_value(var_name: str) -> str | None:
+    for env_path in _iter_candidate_dotenv_paths():
+        if not env_path:
+            continue
+        try:
+            with env_path.open("r", encoding="utf-8") as handle:
+                for raw_line in handle:
+                    parsed = _parse_dotenv_line(raw_line)
+                    if not parsed:
+                        continue
+                    key, value = parsed
+                    if key == var_name:
+                        return value
+        except FileNotFoundError:
+            continue
+        except OSError:  # pragma: no cover - unlikely on local files
+            continue
+    return None
+
+
+def _iter_candidate_dotenv_paths() -> Iterable[Path]:
+    seen: set[Path] = set()
+    cwd = Path.cwd()
+    for directory in (cwd, *cwd.parents):
+        candidate = directory / ".env"
+        if candidate not in seen:
+            seen.add(candidate)
+            yield candidate
+    package_root = Path(__file__).resolve().parent
+    repo_root = package_root.parent
+    for extra in (package_root / ".env", repo_root / ".env"):
+        if extra not in seen:
+            seen.add(extra)
+            yield extra
+
+
+def _parse_dotenv_line(line: str) -> tuple[str, str] | None:
+    stripped = line.strip()
+    if not stripped or stripped.startswith("#"):
+        return None
+    if stripped.startswith("export "):
+        stripped = stripped[len("export ") :].lstrip()
+    if "=" not in stripped:
+        return None
+    key, value = stripped.split("=", 1)
+    key = key.strip()
+    if not key:
+        return None
+    value = value.strip().strip('"').strip("'")
+    return key, value
+
+
 def _parse_chain(response_text: str) -> Any:
     return _parse_json_response(response_text)
 
@@ -295,8 +505,7 @@ def _parse_json_response(response_text: str) -> Any:
 
 def _populate_block_parameters_with_llm(
     prompt: str,
-    llm_model: str,
-    endpoint: str,
+    call_llm: Callable[[str], str],
     chain: dict[str, Any],
     models: list[ModelDefinition],
 ) -> None:
@@ -335,7 +544,7 @@ def _populate_block_parameters_with_llm(
             position=index,
         )
 
-        response_text = _call_ollama(endpoint, llm_model, parameter_prompt)
+        response_text = call_llm(parameter_prompt)
         raw_parameters = _parse_parameter_response(response_text)
         try:
             normalized_parameters = _normalize_parameters(model, raw_parameters)
