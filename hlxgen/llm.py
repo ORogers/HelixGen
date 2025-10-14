@@ -4,6 +4,7 @@ import json
 import logging
 import os
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Callable, Iterable
 from urllib import error, request
 
@@ -512,6 +513,8 @@ def _populate_block_parameters_with_llm(
     chain_title = chain.get("meta", {}).get("name") or chain.get("title") or "Generated Tone"
     ordered_block_names = [model.display_name for model in models]
 
+    work_items: list[tuple[int, dict[str, Any], ModelDefinition, str]] = []
+
     for index, (block_spec, model) in enumerate(zip(chain["blocks"], models)):
         if not isinstance(block_spec, dict):
             continue
@@ -544,10 +547,16 @@ def _populate_block_parameters_with_llm(
             position=index,
         )
 
+        work_items.append((index, block_spec, model, parameter_prompt))
+
+    if not work_items:
+        return
+
+    def _run_parameter_selection(model: ModelDefinition, parameter_prompt: str) -> dict[str, Any]:
         response_text = call_llm(parameter_prompt)
         raw_parameters = _parse_parameter_response(response_text)
         try:
-            normalized_parameters = _normalize_parameters(model, raw_parameters)
+            return _normalize_parameters(model, raw_parameters)
         except LLMGenerationError:
             raise
         except Exception as exc:  # pragma: no cover - wrap unexpected validation issues
@@ -555,15 +564,27 @@ def _populate_block_parameters_with_llm(
                 f"Failed to normalize parameters for block '{model.display_name}': {exc}"
             ) from exc
 
-        if normalized_parameters:
-            block_spec.setdefault("parameters", {}).update(normalized_parameters)
-            logger.info(
-                "Parameters selected for '%s': %s",
-                model.display_name,
-                normalized_parameters,
-            )
-        else:
-            logger.info("LLM did not specify parameters for '%s'; defaults will be used.", model.display_name)
+    max_workers = min(3, len(work_items))
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_map = {
+            executor.submit(_run_parameter_selection, model, parameter_prompt): (index, block_spec, model)
+            for index, block_spec, model, parameter_prompt in work_items
+        }
+        for future in as_completed(future_map):
+            index, block_spec, model = future_map[future]
+            normalized_parameters = future.result()
+            if normalized_parameters:
+                block_spec.setdefault("parameters", {}).update(normalized_parameters)
+                logger.info(
+                    "Parameters selected for '%s': %s",
+                    model.display_name,
+                    normalized_parameters,
+                )
+            else:
+                logger.info(
+                    "LLM did not specify parameters for '%s'; defaults will be used.",
+                    model.display_name,
+                )
 
 
 def _compose_parameter_prompt(
