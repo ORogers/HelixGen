@@ -14,6 +14,38 @@ DEFAULT_TEMPLATE = "HXTemplate.hlx"
 DEFAULT_FOOTSWITCH_LED = 13676288
 
 
+def _resolve_block_enabled(block_spec: Dict[str, Any], model: ModelDefinition) -> bool:
+    if "enabled" in block_spec:
+        return _normalize_enabled_flag(block_spec["enabled"])
+    if "@enabled" in block_spec:
+        return _normalize_enabled_flag(block_spec["@enabled"])
+    return _default_enabled_for_model(model)
+
+
+def _normalize_enabled_flag(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered in {"true", "1", "yes", "on"}:
+            return True
+        if lowered in {"false", "0", "no", "off"}:
+            return False
+    if isinstance(value, (int, float)):
+        return bool(value)
+    return bool(value)
+
+
+def _default_enabled_for_model(model: ModelDefinition) -> bool:
+    category = (model.category or "").lower()
+    if "distortion" in category or "drive" in category:
+        return False
+    name = model.display_name.lower()
+    if any(keyword in name for keyword in ("drive", "overdrive", "distortion", "fuzz")):
+        return False
+    return True
+
+
 @dataclass
 class GenerationReport:
     warnings: List[str] = field(default_factory=list)
@@ -159,7 +191,7 @@ def generate_preset(
             "@path": block_spec.get("path", 0),
             "@position": block_spec.get("position", index),
             "@type": block_spec.get("type", 0),
-            "@enabled": block_spec.get("enabled", True),
+            "@enabled": _resolve_block_enabled(block_spec, model),
             "@stereo": block_spec.get("stereo", False),
             "@no_snapshot_bypass": bool(block_spec.get("no_snapshot_bypass", False)),
         }

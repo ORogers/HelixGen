@@ -30,7 +30,7 @@ def test_generate_preset_applies_defaults_and_overrides(dataset_path, horizon_ch
     assert meta["device"] == "Helix Native"
     assert tone["global"]["@tempo"] == 140.0
     assert block["@model"] == "HD2_DistHorizonDrive"
-    assert block["@enabled"] is True
+    assert block["@enabled"] is False
     assert block["Bright"] == 0.2
 
     # Dataset default should be applied for parameters not supplied in chain
@@ -44,3 +44,14 @@ def test_generate_preset_applies_defaults_and_overrides(dataset_path, horizon_ch
     footswitch = tone["footswitch"]["dsp0"]["block0"]
     assert footswitch["@fs_index"] == 1
     assert footswitch["@fs_enabled"] is True
+
+
+def test_non_distortion_blocks_remain_enabled(dataset_path, template_data):
+    catalog = ModelCatalog(dataset_path)
+    chain = {"blocks": [{"model": "US Double Nrm"}]}
+
+    preset, _ = generate_preset(chain, catalog, template_data)
+    block = preset["data"]["tone"]["dsp0"]["block0"]
+
+    assert block["@model"] == "HD2_AmpUSDoubleNrm"
+    assert block["@enabled"] is True
