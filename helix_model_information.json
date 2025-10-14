@@ -48368,8 +48368,8 @@
         "valueType": 1,
         "displayType": "time_ms",
         "min": 0.01,
-        "max": 10,
-        "default": 3,
+        "max": 1,
+        "default": 0.56,
         "scale": 1000,
         "forwardMap": {},
         "reverseMap": {}
@@ -48510,8 +48510,8 @@
         "valueType": 1,
         "displayType": "time_ms",
         "min": 0.01,
-        "max": 10,
-        "default": 3,
+        "max": 1,
+        "default": 0.5,
         "scale": 1000,
         "forwardMap": {},
         "reverseMap": {}
