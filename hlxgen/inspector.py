@@ -1,17 +1,15 @@
-from __future__ import annotations
-
-from typing import Any, Dict, List, Tuple
+from typing import Any
 
 from .dataset import ModelCatalog, ModelCatalogError
 
 
-def inspect_preset(preset: Dict[str, Any], catalog: ModelCatalog) -> str:
+def inspect_preset(preset: dict[str, Any], catalog: ModelCatalog) -> str:
     dsp0 = (
         preset.get("data", {})
         .get("tone", {})
         .get("dsp0", {})
     )
-    rows: List[Tuple[str, str, str, str]] = []
+    rows: list[tuple[str, str, str, str]] = []
 
     for key, block in dsp0.items():
         if key in {"inputA", "outputA"}:
@@ -19,10 +17,7 @@ def inspect_preset(preset: Dict[str, Any], catalog: ModelCatalog) -> str:
         if not isinstance(block, dict):
             continue
         position = block.get("@position")
-        if position is None:
-            position_str = "?"
-        else:
-            position_str = str(position)
+        position_str = "?" if position is None else str(position)
         model_name = block.get("@model", "Unknown")
 
         try:
@@ -43,23 +38,21 @@ def inspect_preset(preset: Dict[str, Any], catalog: ModelCatalog) -> str:
         rows.append(("-", "No blocks", "", ""))
 
     headers = ("Pos", "Model (ID)", "Type", "Based On")
-    table_rows = [headers] + rows
+    table_rows = [headers, *rows]
 
     widths = [0, 0, 0, 0]
     for row in table_rows:
         for idx, cell in enumerate(row):
             widths[idx] = max(widths[idx], len(cell))
 
-    def format_row(row: Tuple[str, str, str, str]) -> str:
+    def format_row(row: tuple[str, str, str, str]) -> str:
         cells = []
         for idx, cell in enumerate(row):
             cells.append(" " + cell.ljust(widths[idx]) + " ")
         return "│" + "│".join(cells) + "│"
 
     def make_border(left: str, middle: str, right: str) -> str:
-        segments = []
-        for width in widths:
-            segments.append("─" * (width + 2))
+        segments = ["─" * (width + 2) for width in widths]
         return left + middle.join(segments) + right
 
     header_line = format_row(headers)
@@ -71,7 +64,6 @@ def inspect_preset(preset: Dict[str, Any], catalog: ModelCatalog) -> str:
         header_line,
         separator,
     ]
-    for line in body_lines:
-        table_lines.append(line)
+    table_lines.extend(body_lines)
     table_lines.append(make_border("└", "┴", "┘"))
     return "\n".join(table_lines)

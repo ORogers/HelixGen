@@ -137,7 +137,7 @@ Provide a readable summary of a `.hlx` preset: signal flow, block order, and mod
 | NFR-4 | **Compatibility** | Output presets must load without modification in Helix Native 3.70+ and HX Edit 3.70+. |
 | NFR-5 | **Transparency** | Validation errors must clearly reference the block, model, and parameter that failed. |
 | NFR-6 | **Performance** | Generation and validation must complete in <1s for presets with ≤100 blocks. |
-| NFR-7 | **Portability** | Works cross-platform on macOS, Windows, Linux (Python 3.9+). |
+| NFR-7 | **Portability** | Works cross-platform on macOS, Windows, Linux (Python 3.13+). |
 
 ---
 

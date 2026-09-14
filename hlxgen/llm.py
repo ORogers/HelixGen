@@ -1,14 +1,17 @@
-from __future__ import annotations
-
 import json
 import logging
 import os
+from collections.abc import Callable, Iterable
 from pathlib import Path
-from typing import Any, Callable, Iterable
+from typing import Any
 from urllib import error, request
 
-from .dataset import ModelCatalog, ModelCatalogError
-from .dataset import ModelDefinition, ParameterDefinition
+from .dataset import (
+    ModelCatalog,
+    ModelCatalogError,
+    ModelDefinition,
+    ParameterDefinition,
+)
 
 
 class LLMGenerationError(RuntimeError):
@@ -40,17 +43,21 @@ _EXAMPLE_CHAIN = {
     ],
 }
 
+# Block names below must be display names that exist in helix_model_information.json:
+# the prompt penalises the model for inventing names, so the demonstrations have to
+# be drawn from the catalog too. Ordering follows the signal-chain rule stated in the
+# instructions (dynamics -> drive -> modulation -> amp -> cab -> delay -> reverb).
 _FEWSHOT_EXAMPLES = [
     {
         "goal": "Classic rock crunch rhythm with tight low end",
         "response": {
             "title": "Arena Crunch",
             "blocks": [
-                "Example Comp"
-                "Example Drive",
-                "Example Amp",
-                "Example Cab",
-                "Example Reverb",
+                "LA Studio Comp",
+                "Scream 808",
+                "Brit Plexi Nrm",
+                "4x12 Greenback 25",
+                "63 Spring Reverb",
             ],
         },
     },
@@ -59,11 +66,12 @@ _FEWSHOT_EXAMPLES = [
         "response": {
             "title": "Shimmering Skies",
             "blocks": [
-                "Example Comp"
-                "Example Drive",
-                "Example Amp",
-                "Example Cab",
-                "Example Reverb",
+                "Deluxe Comp",
+                "70s Chorus",
+                "US Double Nrm",
+                "2x12 Double C12N",
+                "Vintage Digital",
+                "Shimmer",
             ],
         },
     },
@@ -268,7 +276,7 @@ def _call_ollama(endpoint: str, model_name: str, prompt: str) -> str:
         detail = ""
         try:
             raw_detail = exc.read().decode("utf-8") if exc.fp else ""
-        except Exception:  # pragma: no cover - protective fallback
+        except (OSError, ValueError):  # pragma: no cover - protective fallback
             raw_detail = ""
         if raw_detail:
             try:
@@ -350,7 +358,7 @@ def _extract_text_from_openai_response(response: Any) -> str | None:
             return "".join(collected).strip()
 
     if hasattr(response, "choices"):
-        choices = getattr(response, "choices")
+        choices = response.choices
         if isinstance(choices, list) and choices:
             message = getattr(choices[0], "message", None)
             if message is not None:
@@ -370,7 +378,7 @@ def _extract_text_from_openai_response(response: Any) -> str | None:
     if hasattr(response, "model_dump"):
         try:
             data = response.model_dump()
-        except Exception:  # pragma: no cover - defensive
+        except Exception:  # noqa: BLE001 # pragma: no cover - third-party SDK object
             data = None
         if isinstance(data, dict):
             output_text = data.get("output_text")
@@ -491,11 +499,13 @@ def _parse_json_response(response_text: str) -> Any:
         raise LLMGenerationError("LLM response was empty")
     try:
         return json.loads(cleaned)
-    except json.JSONDecodeError:
+    except json.JSONDecodeError as decode_error:
         start = cleaned.find("{")
         end = cleaned.rfind("}")
         if start == -1 or end == -1 or end <= start:
-            raise LLMGenerationError("Could not locate JSON object in LLM response")
+            raise LLMGenerationError(
+                "Could not locate JSON object in LLM response"
+            ) from decode_error
         snippet = cleaned[start : end + 1]
         try:
             return json.loads(snippet)
@@ -512,7 +522,9 @@ def _populate_block_parameters_with_llm(
     chain_title = chain.get("meta", {}).get("name") or chain.get("title") or "Generated Tone"
     ordered_block_names = [model.display_name for model in models]
 
-    for index, (block_spec, model) in enumerate(zip(chain["blocks"], models)):
+    for index, (block_spec, model) in enumerate(
+        zip(chain["blocks"], models, strict=True)
+    ):
         if not isinstance(block_spec, dict):
             continue
 
@@ -652,10 +664,7 @@ def _parse_parameter_response(response_text: str) -> dict[str, Any]:
     parsed = _parse_json_response(response_text)
     if not isinstance(parsed, dict):
         raise LLMGenerationError("LLM parameter response must be a JSON object.")
-    if "parameters" in parsed:
-        params = parsed["parameters"]
-    else:
-        params = parsed
+    params = parsed.get("parameters", parsed)
     if not isinstance(params, dict):
         raise LLMGenerationError("LLM parameter response must map parameter names to values.")
     return params

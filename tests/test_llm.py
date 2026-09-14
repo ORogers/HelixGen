@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import json
 from pathlib import Path
 from typing import Any
@@ -10,9 +8,9 @@ from hlxgen.dataset import ModelCatalog
 from hlxgen.llm import (
     _CHAIN_SCHEMA,
     _FEWSHOT_EXAMPLES,
+    LLMGenerationError,
     _compose_prompt,
     generate_chain_from_prompt,
-    LLMGenerationError,
 )
 
 
@@ -44,6 +42,19 @@ def test_compose_prompt_includes_fewshot_examples(dataset_path):
         assert f"Example {index} — user goal: {sample['goal']}" in prompt
         rendered = json.dumps(sample["response"], indent=2)
         assert rendered in prompt
+
+
+def test_fewshot_examples_use_real_catalog_models(dataset_path):
+    catalog = ModelCatalog(dataset_path)
+
+    for sample in _FEWSHOT_EXAMPLES:
+        blocks = sample["response"]["blocks"]
+        assert blocks, f"few-shot example {sample['goal']!r} has no blocks"
+        for name in blocks:
+            assert catalog.has_model(name), (
+                f"few-shot example {sample['goal']!r} references "
+                f"unknown model {name!r}"
+            )
 
 
 def test_generate_chain_requires_object(monkeypatch: pytest.MonkeyPatch, dataset_path: Path):
@@ -217,7 +228,7 @@ def test_generate_chain_with_openai_backend(
     fake_client = object()
     seen_models: set[str] = set()
 
-    monkeypatch.setattr("hlxgen.llm", "_OPENAI_CLIENT", None, raising=False)
+    monkeypatch.setattr("hlxgen.llm._OPENAI_CLIENT", None, raising=False)
     monkeypatch.setattr("hlxgen.llm._get_openai_client", lambda: fake_client)
 
     def fake_call_openai(model_name: str, prompt: str, *, client: Any | None = None) -> str:

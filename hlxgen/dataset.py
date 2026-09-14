@@ -1,9 +1,8 @@
-from __future__ import annotations
-
 import json
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any
 
 
 class ModelCatalogError(RuntimeError):
@@ -13,14 +12,14 @@ class ModelCatalogError(RuntimeError):
 @dataclass(frozen=True)
 class ParameterDefinition:
     name: str
-    value_type: Optional[int]
-    min_value: Optional[float]
-    max_value: Optional[float]
-    default: Optional[Any]
-    display_type: Optional[str]
-    forward_map: Dict[str, Any]
-    reverse_map: Dict[str, Any]
-    raw: Dict[str, Any]
+    value_type: int | None
+    min_value: float | None
+    max_value: float | None
+    default: Any | None
+    display_type: str | None
+    forward_map: dict[str, Any]
+    reverse_map: dict[str, Any]
+    raw: dict[str, Any]
 
     def has_default(self) -> bool:
         return self.default is not None
@@ -93,10 +92,10 @@ class ParameterDefinition:
 class ModelDefinition:
     display_name: str
     internal_name: str
-    category: Optional[str]
-    based_on: Optional[str]
-    parameters: Dict[str, ParameterDefinition]
-    raw: Dict[str, Any]
+    category: str | None
+    based_on: str | None
+    parameters: dict[str, ParameterDefinition]
+    raw: dict[str, Any]
 
     def parameter_names(self) -> Iterable[str]:
         return self.parameters.keys()
@@ -113,9 +112,9 @@ class ModelDefinition:
 class ModelCatalog:
     def __init__(self, dataset_path: Path):
         self.dataset_path = dataset_path
-        self._models_by_display: Dict[str, ModelDefinition] = {}
-        self._models_by_internal: Dict[str, ModelDefinition] = {}
-        self._models: List[ModelDefinition] = []
+        self._models_by_display: dict[str, ModelDefinition] = {}
+        self._models_by_internal: dict[str, ModelDefinition] = {}
+        self._models: list[ModelDefinition] = []
         self._load()
 
     def _load(self) -> None:

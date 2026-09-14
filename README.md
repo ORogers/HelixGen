@@ -1,5 +1,7 @@
 # HelixPy — `hlxgen`
 
+[![CI](https://github.com/ORogers/HelixPy/actions/workflows/ci.yml/badge.svg)](https://github.com/ORogers/HelixPy/actions/workflows/ci.yml)
+
 `hlxgen` is a Python command-line utility for generating, validating, and inspecting Line 6 Helix (`.hlx`) preset files. It provides a structured workflow for building presets from declarative signal-chain definitions while enforcing model and parameter correctness through a centralized dataset.
 
 ## Features
@@ -20,7 +22,7 @@
 - `tests/` — Pytest-based unit suite covering generation, validation, CLI flows, and dataset integration.
 
 ## Usage
-Install dependencies (Python 3.9+):
+Install dependencies (Python 3.13+):
 
 ```bash
 python3 -m pip install -r requirements.txt
@@ -119,6 +121,14 @@ python3 -m pytest -q
 ```
 
 Tests rely on `helix_model_information.json`; ensure it is present in the project root before running the suite.
+
+### Continuous Integration
+
+`.github/workflows/ci.yml` runs on every push to `main` and on every pull request:
+
+- **tests** — the pytest suite on Python 3.13.
+- **cli round-trip** — generates and validates every chain in `docs/examples/`, guarding the acceptance criteria in the requirements doc.
+- **lint** — `ruff check` against the rule set pinned in `ruff.toml`. Both the ruff version and the rule selection are pinned so a ruff release cannot fail CI on its own; bump them together.
 
 ## Requirements Reference
 Functional requirements are documented in `docs/hlxgen_functional_requirements.md`. The implementation and tests align with:
