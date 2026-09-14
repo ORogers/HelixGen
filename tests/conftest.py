@@ -1,8 +1,5 @@
-from __future__ import annotations
-
 import json
 from pathlib import Path
-from typing import Dict
 
 import pytest
 
@@ -29,14 +26,14 @@ def template_path(project_root: Path) -> Path:
 
 
 @pytest.fixture(scope="session")
-def template_data(template_path: Path) -> Dict[str, object]:
+def template_data(template_path: Path) -> dict[str, object]:
     with template_path.open("r", encoding="utf-8") as fh:
         return json.load(fh)
 
 
 @pytest.fixture
 def schema_path(tmp_path: Path) -> Path:
-    schema: Dict[str, object] = {
+    schema: dict[str, object] = {
         "type": "object",
         "required": ["data"],
         "properties": {
@@ -63,7 +60,7 @@ def schema_path(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def horizon_chain() -> Dict[str, object]:
+def horizon_chain() -> dict[str, object]:
     return {
         "meta": {
             "name": "Precision Drive Patch",

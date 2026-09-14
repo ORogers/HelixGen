@@ -1,9 +1,7 @@
-from __future__ import annotations
-
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 from .dataset import ModelCatalog, ModelCatalogError
 
@@ -24,14 +22,14 @@ class SchemaProblem:
 class SimpleSchemaValidator:
     """Very small subset of JSON Schema validation needed for this project."""
 
-    def __init__(self, schema: Dict[str, Any]):
+    def __init__(self, schema: dict[str, Any]):
         self.schema = schema
 
-    def validate(self, instance: Any) -> List[SchemaProblem]:
+    def validate(self, instance: Any) -> list[SchemaProblem]:
         return self._validate(self.schema, instance, "$")
 
-    def _validate(self, schema: Dict[str, Any], instance: Any, path: str) -> List[SchemaProblem]:
-        problems: List[SchemaProblem] = []
+    def _validate(self, schema: dict[str, Any], instance: Any, path: str) -> list[SchemaProblem]:
+        problems: list[SchemaProblem] = []
         schema_type = schema.get("type")
         if schema_type:
             if isinstance(schema_type, list):
@@ -53,15 +51,17 @@ class SimpleSchemaValidator:
             problems.extend(self._validate_array(schema, instance, path))
         return problems
 
-    def _validate_object(self, schema: Dict[str, Any], instance: Dict[str, Any], path: str) -> List[SchemaProblem]:
-        problems: List[SchemaProblem] = []
+    def _validate_object(self, schema: dict[str, Any], instance: dict[str, Any], path: str) -> list[SchemaProblem]:
+        problems: list[SchemaProblem] = []
         properties = schema.get("properties", {})
         required = schema.get("required", [])
         additional = schema.get("additionalProperties", True)
 
-        for req in required:
-            if req not in instance:
-                problems.append(SchemaProblem(path, f"Missing required property '{req}'"))
+        problems.extend(
+            SchemaProblem(path, f"Missing required property '{req}'")
+            for req in required
+            if req not in instance
+        )
 
         for key, value in instance.items():
             child_path = f"{path}.{key}"
@@ -76,8 +76,8 @@ class SimpleSchemaValidator:
                     problems.append(SchemaProblem(child_path, "Additional properties not allowed"))
         return problems
 
-    def _validate_array(self, schema: Dict[str, Any], instance: List[Any], path: str) -> List[SchemaProblem]:
-        problems: List[SchemaProblem] = []
+    def _validate_array(self, schema: dict[str, Any], instance: list[Any], path: str) -> list[SchemaProblem]:
+        problems: list[SchemaProblem] = []
         items = schema.get("items")
         if isinstance(items, dict):
             for index, value in enumerate(instance):
@@ -114,7 +114,7 @@ class PresetValidator:
         self.catalog = catalog
         self._schema_validator = SimpleSchemaValidator(self._load_schema())
 
-    def _load_schema(self) -> Dict[str, Any]:
+    def _load_schema(self) -> dict[str, Any]:
         if not self.schema_path.exists():
             raise ValidationError(
                 f"Schema file not found at {self.schema_path}. "
@@ -129,12 +129,12 @@ class PresetValidator:
             raise ValidationError("Schema root must be an object.")
         return schema
 
-    def validate_structural(self, preset: Dict[str, Any]) -> List[str]:
+    def validate_structural(self, preset: dict[str, Any]) -> list[str]:
         problems = self._schema_validator.validate(preset)
         return [str(problem) for problem in problems]
 
-    def validate_semantic(self, preset: Dict[str, Any]) -> List[str]:
-        errors: List[str] = []
+    def validate_semantic(self, preset: dict[str, Any]) -> list[str]:
+        errors: list[str] = []
         try:
             data = preset["data"]
             tone = data["tone"]

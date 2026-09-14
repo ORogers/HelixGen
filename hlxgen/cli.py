@@ -1,19 +1,18 @@
-from __future__ import annotations
-
 import argparse
 import json
-from pathlib import Path
 import shutil
 import subprocess
 import sys
-from typing import Any, Callable
+from collections.abc import Callable
+from pathlib import Path
+from typing import Any
 
 from .dataset import ModelCatalog, ModelCatalogError
 from .generator import DEFAULT_TEMPLATE, generate_preset
 from .inspector import inspect_preset
 from .io import load_chain_spec, load_json_file
-from .validator import PresetValidator, ValidationError
 from .llm import LLMGenerationError, generate_chain_from_prompt
+from .validator import PresetValidator, ValidationError
 
 DEFAULT_DATASET = Path("helix_model_information.json")
 DEFAULT_SCHEMA = Path("helix-preset.schema.json")
@@ -281,8 +280,7 @@ def run_models(args: argparse.Namespace) -> int:
         f"│{header_line}│",
         f"├{separator}┤",
     ]
-    for row in rows:
-        lines.append(f"│{format_row(row)}│")
+    lines.extend(f"│{format_row(row)}│" for row in rows)
     lines.append(f"└{'┴'.join('─' * width for width in widths)}┘")
     print("\n".join(lines))
     return 0
@@ -389,7 +387,7 @@ def _generate_from_chain(
     if post_write:
         try:
             post_write(output_path)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - external automation, report don't crash
             print(f"Upload failed: {exc}", file=sys.stderr)
             return 1
 

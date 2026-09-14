@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import json
 from pathlib import Path
 from typing import Any
@@ -10,9 +8,9 @@ from hlxgen.dataset import ModelCatalog
 from hlxgen.llm import (
     _CHAIN_SCHEMA,
     _FEWSHOT_EXAMPLES,
+    LLMGenerationError,
     _compose_prompt,
     generate_chain_from_prompt,
-    LLMGenerationError,
 )
 
 

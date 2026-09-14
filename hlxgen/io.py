@@ -1,15 +1,13 @@
-from __future__ import annotations
-
 import json
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 from .validator import ValidationError
 
 YAML_EXTENSIONS = {".yaml", ".yml"}
 
 
-def load_json_file(path: Path) -> Dict[str, Any]:
+def load_json_file(path: Path) -> dict[str, Any]:
     if not path.exists():
         raise ValidationError(f"File not found: {path}")
     with path.open("r", encoding="utf-8") as fh:
@@ -19,7 +17,7 @@ def load_json_file(path: Path) -> Dict[str, Any]:
             raise ValidationError(f"Invalid JSON in {path}: {exc}") from exc
 
 
-def load_chain_spec(path: Path) -> Dict[str, Any]:
+def load_chain_spec(path: Path) -> dict[str, Any]:
     suffix = path.suffix.lower()
     if suffix in YAML_EXTENSIONS:
         return _load_yaml(path)
@@ -30,7 +28,7 @@ def load_chain_spec(path: Path) -> Dict[str, Any]:
     )
 
 
-def _load_yaml(path: Path) -> Dict[str, Any]:
+def _load_yaml(path: Path) -> dict[str, Any]:
     try:
         import yaml  # type: ignore
     except ModuleNotFoundError as exc:  # pragma: no cover - dependency guard

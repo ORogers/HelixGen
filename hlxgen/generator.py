@@ -1,8 +1,7 @@
-from __future__ import annotations
-
-from dataclasses import dataclass, field
+import contextlib
 import copy
-from typing import Any, Dict, List, Optional
+from dataclasses import dataclass, field
+from typing import Any
 
 from .dataset import ModelCatalog, ModelCatalogError, ModelDefinition
 
@@ -16,18 +15,18 @@ DEFAULT_FOOTSWITCH_LED = 13676288
 
 @dataclass
 class GenerationReport:
-    warnings: List[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
 
     def add_warning(self, message: str) -> None:
         self.warnings.append(message)
 
 
 def generate_preset(
-    chain: Dict[str, Any],
+    chain: dict[str, Any],
     catalog: ModelCatalog,
-    template: Dict[str, Any],
-    overrides: Optional[Dict[str, Any]] = None,
-) -> tuple[Dict[str, Any], GenerationReport]:
+    template: dict[str, Any],
+    overrides: dict[str, Any] | None = None,
+) -> tuple[dict[str, Any], GenerationReport]:
     overrides = overrides or {}
     report = GenerationReport()
 
@@ -49,7 +48,7 @@ def generate_preset(
             "Signal chain must define a non-empty 'blocks' list."
         )
 
-    normalized_blocks: List[Dict[str, Any]] = []
+    normalized_blocks: list[dict[str, Any]] = []
     for entry in blocks_spec:
         if isinstance(entry, dict):
             normalized_blocks.append(entry)
@@ -68,7 +67,7 @@ def generate_preset(
 
     blocks_spec = normalized_blocks
 
-    chain_meta: Dict[str, Any] = {}
+    chain_meta: dict[str, Any] = {}
     if isinstance(chain.get("meta"), dict):
         chain_meta.update(chain["meta"])
 
@@ -136,13 +135,13 @@ def generate_preset(
     for key, value in output_default.items():
         output_block.setdefault(key, value)
 
-    dsp_blocks: Dict[str, Dict[str, Any]] = copy.deepcopy(template_dsp0) if isinstance(template_dsp0, dict) else {}
+    dsp_blocks: dict[str, dict[str, Any]] = copy.deepcopy(template_dsp0) if isinstance(template_dsp0, dict) else {}
     dsp_blocks["inputA"] = input_block
     if isinstance(template_dsp0, dict) and "inputB" in template_dsp0:
         dsp_blocks["inputB"] = copy.deepcopy(template_dsp0["inputB"])
 
-    footswitch_assignments: Dict[str, Dict[str, Any]] = {}
-    automatic_fs_candidates: List[tuple[str, ModelDefinition, int]] = []
+    footswitch_assignments: dict[str, dict[str, Any]] = {}
+    automatic_fs_candidates: list[tuple[str, ModelDefinition, int]] = []
 
     for index, block_spec in enumerate(blocks_spec):
         if not isinstance(block_spec, dict):
@@ -154,7 +153,7 @@ def generate_preset(
         model = catalog.get(model_identifier)
         block_id = f"block{index}"
 
-        block_payload: Dict[str, Any] = {
+        block_payload: dict[str, Any] = {
             "@model": model.internal_name,
             "@path": block_spec.get("path", 0),
             "@position": block_spec.get("position", index),
@@ -191,10 +190,8 @@ def generate_preset(
             block_payload[param_name] = normalized_value
             if definition.value_type == 1:
                 original_number = None
-                try:
+                with contextlib.suppress(TypeError, ValueError):
                     original_number = float(value)
-                except (TypeError, ValueError):
-                    pass
                 if (
                     definition.min_value is not None
                     and original_number is not None
@@ -243,8 +240,8 @@ def generate_preset(
 
     if automatic_fs_candidates:
         priority_categories = {"distortion", "modulation", "delay"}
-        preferred: List[tuple[str, Any, int]] = []
-        fallback: List[tuple[str, Any, int]] = []
+        preferred: list[tuple[str, Any, int]] = []
+        fallback: list[tuple[str, Any, int]] = []
         for block_id, candidate_model, order in automatic_fs_candidates:
             category = (candidate_model.category or "").lower()
             if category in priority_categories:
@@ -284,9 +281,12 @@ def generate_preset(
     tone_section["global"] = global_section
     tone_section["dsp0"] = dsp_blocks
 
-    if "@cursor_group" in tone_section["global"]:
-        if tone_section["global"]["@cursor_group"] in {"", None} and blocks_spec:
-            tone_section["global"]["@cursor_group"] = "block0"
+    if (
+        "@cursor_group" in tone_section["global"]
+        and tone_section["global"]["@cursor_group"] in {"", None}
+        and blocks_spec
+    ):
+        tone_section["global"]["@cursor_group"] = "block0"
 
     block_keys = [f"block{index}" for index in range(len(blocks_spec))]
     for snap_key, snapshot in tone_section.items():
@@ -381,8 +381,8 @@ def generate_preset(
     return preset, report
 
 
-def _merge_dicts(base: Optional[Dict[str, Any]], override: Optional[Dict[str, Any]]) -> Dict[str, Any]:
-    result: Dict[str, Any] = copy.deepcopy(base) if isinstance(base, dict) else {}
+def _merge_dicts(base: dict[str, Any] | None, override: dict[str, Any] | None) -> dict[str, Any]:
+    result: dict[str, Any] = copy.deepcopy(base) if isinstance(base, dict) else {}
     if override:
         result.update(override)
     return result
