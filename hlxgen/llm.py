@@ -40,17 +40,21 @@ _EXAMPLE_CHAIN = {
     ],
 }
 
+# Block names below must be display names that exist in helix_model_information.json:
+# the prompt penalises the model for inventing names, so the demonstrations have to
+# be drawn from the catalog too. Ordering follows the signal-chain rule stated in the
+# instructions (dynamics -> drive -> modulation -> amp -> cab -> delay -> reverb).
 _FEWSHOT_EXAMPLES = [
     {
         "goal": "Classic rock crunch rhythm with tight low end",
         "response": {
             "title": "Arena Crunch",
             "blocks": [
-                "Example Comp"
-                "Example Drive",
-                "Example Amp",
-                "Example Cab",
-                "Example Reverb",
+                "LA Studio Comp",
+                "Scream 808",
+                "Brit Plexi Nrm",
+                "4x12 Greenback 25",
+                "63 Spring Reverb",
             ],
         },
     },
@@ -59,11 +63,12 @@ _FEWSHOT_EXAMPLES = [
         "response": {
             "title": "Shimmering Skies",
             "blocks": [
-                "Example Comp"
-                "Example Drive",
-                "Example Amp",
-                "Example Cab",
-                "Example Reverb",
+                "Deluxe Comp",
+                "70s Chorus",
+                "US Double Nrm",
+                "2x12 Double C12N",
+                "Vintage Digital",
+                "Shimmer",
             ],
         },
     },

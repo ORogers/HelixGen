@@ -15,6 +15,40 @@ def _write_chain(path: Path, chain: dict[str, object]) -> None:
     path.write_text(json.dumps(chain, indent=2), encoding="utf-8")
 
 
+def _fake_ollama(
+    chain: dict[str, object],
+    parameters: dict[str, object] | None = None,
+):
+    """Build a urlopen stub that mimics Ollama's two-stage describe protocol.
+
+    The first call returns the block list; hlxgen then makes one follow-up call
+    per block asking for that block's parameters.
+    """
+
+    def fake_urlopen(request_obj: Any):
+        prompt = json.loads(request_obj.data.decode("utf-8"))["prompt"]
+        body: dict[str, object]
+        if "Available parameters:" in prompt:
+            body = {"parameters": parameters or {}}
+        else:
+            body = chain
+
+        class _Response:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self) -> bytes:
+                payload = {"response": json.dumps(body), "done": True}
+                return json.dumps(payload).encode("utf-8")
+
+        return _Response()
+
+    return fake_urlopen
+
+
 def test_cli_generate_writes_preset(
     tmp_path: Path,
     dataset_path: Path,
@@ -205,27 +239,13 @@ def test_cli_describe_generates_from_prompt(
 ) -> None:
     preset_path = tmp_path / "prompted.hlx"
 
-    def fake_urlopen(request_obj: Any):
-        class _Response:
-            def __enter__(self):
-                return self
-
-            def __exit__(self, exc_type, exc, tb):
-                return False
-
-            def read(self) -> bytes:
-                chain = {
-                    "title": "Prompted Tone",
-                    "blocks": [
-                        "Horizon Drive",
-                    ],
-                }
-                payload = {"response": json.dumps(chain), "done": True}
-                return json.dumps(payload).encode("utf-8")
-
-        return _Response()
-
-    monkeypatch.setattr("hlxgen.llm.request.urlopen", fake_urlopen)
+    monkeypatch.setattr(
+        "hlxgen.llm.request.urlopen",
+        _fake_ollama(
+            {"title": "Prompted Tone", "blocks": ["Horizon Drive"]},
+            {"Drive": 0.6},
+        ),
+    )
 
     exit_code = cli.main(
         [
@@ -247,6 +267,11 @@ def test_cli_describe_generates_from_prompt(
     assert exit_code == 0
     assert preset_path.exists()
 
+    written = json.loads(preset_path.read_text(encoding="utf-8"))
+    block0 = written["data"]["tone"]["dsp0"]["block0"]
+    assert block0["@model"] == "HD2_DistHorizonDrive"
+    assert block0["Drive"] == pytest.approx(0.6)
+
 
 def test_cli_describe_upload_runs_script(
     tmp_path: Path,
@@ -259,29 +284,18 @@ def test_cli_describe_upload_runs_script(
     script_path = tmp_path / "import.applescript"
     script_path.write_text("-- dummy", encoding="utf-8")
 
-    def fake_urlopen(request_obj: Any):
-        class _Response:
-            def __enter__(self):
-                return self
-
-            def __exit__(self, exc_type, exc, tb):
-                return False
-
-            def read(self) -> bytes:
-                chain = {"title": "Upload Tone", "blocks": ["Horizon Drive"]}
-                payload = {"response": json.dumps(chain), "done": True}
-                return json.dumps(payload).encode("utf-8")
-
-        return _Response()
-
-    monkeypatch.setattr("hlxgen.llm.request.urlopen", fake_urlopen)
+    monkeypatch.setattr(
+        "hlxgen.llm.request.urlopen",
+        _fake_ollama({"title": "Upload Tone", "blocks": ["Horizon Drive"]}),
+    )
     monkeypatch.setattr("hlxgen.cli.sys.platform", "darwin")
 
     captured_args: dict[str, Any] = {}
 
-    def fake_upload(script: Path, preset: Path) -> None:
+    def fake_upload(script: Path, preset: Path, mode: str) -> None:
         captured_args["script"] = script
         captured_args["preset"] = preset
+        captured_args["mode"] = mode
 
     monkeypatch.setattr("hlxgen.cli._upload_via_script", fake_upload)
 
@@ -308,6 +322,7 @@ def test_cli_describe_upload_runs_script(
     assert exit_code == 0
     assert captured_args["script"] == script_path
     assert captured_args["preset"] == preset_path
+    assert captured_args["mode"] == "auto"
 
 
 def test_cli_describe_default_output_directory(
@@ -319,22 +334,10 @@ def test_cli_describe_default_output_directory(
 ) -> None:
     generated_dir = tmp_path / "generated-presets"
 
-    def fake_urlopen(_: Any):
-        class _Response:
-            def __enter__(self):
-                return self
-
-            def __exit__(self, exc_type, exc, tb):
-                return False
-
-            def read(self) -> bytes:
-                chain = {"title": "Prompted Tone", "blocks": ["Horizon Drive"]}
-                payload = {"response": json.dumps(chain), "done": True}
-                return json.dumps(payload).encode("utf-8")
-
-        return _Response()
-
-    monkeypatch.setattr("hlxgen.llm.request.urlopen", fake_urlopen)
+    monkeypatch.setattr(
+        "hlxgen.llm.request.urlopen",
+        _fake_ollama({"title": "Prompted Tone", "blocks": ["Horizon Drive"]}),
+    )
     monkeypatch.chdir(tmp_path)
 
     exit_code = cli.main(
