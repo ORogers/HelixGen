@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from .dataset import ModelCatalog, ModelCatalogError
+from .device import AuditReport, DeviceSymbols, SymbolsError, audit_catalog
 from .generator import DEFAULT_TEMPLATE, generate_preset
 from .inspector import inspect_preset
 from .io import load_chain_spec, load_json_file
@@ -87,6 +88,31 @@ def build_parser() -> argparse.ArgumentParser:
     models_parser.add_argument(
         "--category",
         help="Filter models by category (case-insensitive)",
+    )
+
+    audit_parser = subparsers.add_parser(
+        "device-audit",
+        help="Reconcile the model catalog against an HX Edit Helix.sym symbol table",
+    )
+    audit_parser.add_argument(
+        "--symbols",
+        type=_path,
+        required=True,
+        help=(
+            "Path to Helix.sym, copied from your own HX Edit installation. "
+            "It is not distributed with this project."
+        ),
+    )
+    audit_parser.add_argument(
+        "--report",
+        type=_path,
+        help="Optional path to write the full audit as JSON",
+    )
+    audit_parser.add_argument(
+        "--limit",
+        type=int,
+        default=15,
+        help="How many models to list per problem section (default: 15)",
     )
 
     describe_parser = subparsers.add_parser(
@@ -330,6 +356,67 @@ def run_describe(args: argparse.Namespace) -> int:
     )
 
 
+def run_device_audit(args: argparse.Namespace) -> int:
+    catalog = ModelCatalog(args.dataset)
+    symbols = DeviceSymbols.load(args.symbols)
+    report = audit_catalog(catalog, symbols)
+
+    print(_format_audit(report, limit=args.limit))
+
+    if args.report:
+        args.report.parent.mkdir(parents=True, exist_ok=True)
+        with args.report.open("w", encoding="utf-8") as fh:
+            json.dump(report.to_dict(), fh, indent=2)
+            fh.write("\n")
+        print(f"\nWrote {args.report}")
+
+    # The audit is diagnostic, not a gate: a real symbol table always carries
+    # host-only models that legitimately have no device symbol, so findings are
+    # reported rather than turned into a failure.
+    return 0
+
+
+def _format_audit(report: AuditReport, limit: int = 15) -> str:
+    lines = [
+        f"Symbol table:   {report.symbol_count} device symbols",
+        f"Catalog:        {report.catalog_count} models",
+        f"Resolved:       {len(report.resolved)}",
+        f"Unresolved:     {len(report.unresolved)}",
+        f"Mono/Stereo:    {len(report.split_models)} models the device splits in two",
+        f"Mismatched:     {len(report.mismatched)} whose parameters do not reconcile",
+    ]
+
+    if report.unresolved:
+        lines.append("")
+        lines.append("Models with no device symbol:")
+        for entry in report.unresolved[:limit]:
+            category = f" [{entry.category}]" if entry.category else ""
+            lines.append(f"  - {entry.display_name}{category} ({entry.internal_name})")
+        if len(report.unresolved) > limit:
+            lines.append(f"  … and {len(report.unresolved) - limit} more")
+
+    if report.mismatched:
+        lines.append("")
+        lines.append("Models whose parameter lists do not reconcile:")
+        for entry in report.mismatched[:limit]:
+            counts = ", ".join(
+                f"{variant}={count}" for variant, count in sorted(entry.device_parameter_counts.items())
+            )
+            lines.append(
+                f"  - {entry.display_name}: catalog={entry.host_parameter_count}, device {counts}"
+            )
+            for variant, names in sorted(entry.missing_on_device.items()):
+                if names:
+                    lines.append(f"      not on device ({variant}): {', '.join(sorted(names))}")
+            for variant, names in sorted(entry.missing_in_catalog.items()):
+                if names:
+                    lines.append(f"      not in catalog ({variant}): {', '.join(sorted(names))}")
+        if len(report.mismatched) > limit:
+            lines.append(f"  … and {len(report.mismatched) - limit} more")
+
+    return "\n".join(lines)
+
+
 def _emit_errors(errors: list[Any]) -> None:
     if not errors:
         return
@@ -459,7 +546,11 @@ def main(argv: list[str] | None = None) -> int:
             return run_models(args)
         if args.command == "describe":
             return run_describe(args)
+        if args.command == "device-audit":
+            return run_device_audit(args)
     except ModelCatalogError as exc:
+        parser.error(str(exc))
+    except SymbolsError as exc:
         parser.error(str(exc))
     except ValidationError as exc:
         parser.error(str(exc))

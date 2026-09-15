@@ -23,3 +23,10 @@ build/
 # Generated Helix presets
 *.hlx
 !HXTemplate.hlx
+
+# Line 6 reference data imported from a local HX Edit install — never committed.
+Helix.sym
+PodGo.sym
+HelixModelDefs.bin
+HelixControls.json
+HX_ModelCatalog.json
