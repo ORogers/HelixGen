@@ -51,6 +51,36 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_generation_arguments(generate_parser)
 
+    generate_parser.add_argument(
+        "--upload",
+        action="store_true",
+        help="Send the generated preset to the pedal after writing it",
+    )
+    generate_parser.add_argument(
+        "--upload-via",
+        dest="upload_via",
+        choices=("usb", "applescript"),
+        default=None,
+        help=(
+            "How to upload. Defaults to usb when a device is attached, and "
+            "falls back to the AppleScript uploader otherwise."
+        ),
+    )
+    generate_parser.add_argument(
+        "--slot",
+        dest="upload_slot",
+        type=int,
+        default=None,
+        help="Target slot for a USB upload. Required with --upload-via usb.",
+    )
+    generate_parser.add_argument(
+        "--upload-script",
+        dest="upload_script",
+        type=_path,
+        default=None,
+        help="Path to the AppleScript automation used with --upload",
+    )
+
     validate_parser = subparsers.add_parser(
         "validate",
         help="Validate an existing .hlx file",
@@ -115,6 +145,95 @@ def build_parser() -> argparse.ArgumentParser:
         help="How many models to list per problem section (default: 15)",
     )
 
+    devices_parser = subparsers.add_parser(
+        "devices",
+        help="List attached Line 6 HX hardware over USB",
+    )
+    devices_parser.add_argument(
+        "--identify",
+        action="store_true",
+        help="Open a control session on each device to confirm it responds",
+    )
+
+    pull_parser = subparsers.add_parser(
+        "pull",
+        help="Read one preset slot off the device without loading it",
+    )
+    pull_parser.add_argument("--slot", type=int, required=True, help="Slot to read")
+    pull_parser.add_argument("--bank", type=int, default=0, help="Bank (default: 0)")
+    pull_parser.add_argument(
+        "-o", "--output", type=_path, required=True, help="Where to write the document"
+    )
+
+    backup_parser = subparsers.add_parser(
+        "backup",
+        help="Read every populated slot into a directory",
+    )
+    backup_parser.add_argument(
+        "-o", "--output", type=_path, required=True, help="Directory to write into"
+    )
+    backup_parser.add_argument("--bank", type=int, default=0, help="Bank (default: 0)")
+    backup_parser.add_argument(
+        "--count", type=int, default=126, help="How many slots to sweep (default: 126)"
+    )
+
+    push_parser = subparsers.add_parser(
+        "push",
+        help="Write an .hlx preset into a chosen slot over USB",
+    )
+    push_parser.add_argument("preset", type=_path, help="The .hlx file to send")
+    push_parser.add_argument(
+        "--slot",
+        type=int,
+        required=True,
+        help="Target slot. Required -- this overwrites what is there.",
+    )
+    push_parser.add_argument("--bank", type=int, default=0, help="Bank (default: 0)")
+    push_parser.add_argument(
+        "--symbols",
+        type=_path,
+        help="Path to Helix.sym (found inside HX Edit automatically if omitted)",
+    )
+    push_parser.add_argument(
+        "--archive",
+        type=_path,
+        help="Write the slot's current contents here before overwriting it",
+    )
+    push_parser.add_argument(
+        "--separate-cabs",
+        action="store_true",
+        help=(
+            "Keep each cab in its own slot instead of fusing it into the amp. "
+            "By default an amp carries its own cab, as it does on the pedal."
+        ),
+    )
+    push_parser.add_argument(
+        "--via",
+        choices=("edits", "document"),
+        default="edits",
+        help=(
+            "How to apply the preset. 'edits' (default) uses surgical ops and is "
+            "the only path that can change a block's model. 'document' sends the "
+            "whole preset in one op-21 write, which suits restoring a document."
+        ),
+    )
+    push_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Build the document and report, but send nothing",
+    )
+    push_parser.add_argument(
+        "-o",
+        "--output",
+        type=_path,
+        help="With --dry-run, write the built document here",
+    )
+    push_parser.add_argument(
+        "--no-verify",
+        action="store_true",
+        help="Skip the read-back comparison after committing",
+    )
+
     describe_parser = subparsers.add_parser(
         "describe",
         help="Generate a preset by prompting a local Ollama model",
@@ -151,6 +270,23 @@ def build_parser() -> argparse.ArgumentParser:
         "--upload",
         action="store_true",
         help="Run the HX Edit AppleScript uploader after generating (macOS only)",
+    )
+    describe_parser.add_argument(
+        "--upload-via",
+        dest="upload_via",
+        choices=("usb", "applescript"),
+        default=None,
+        help=(
+            "How to upload. Defaults to usb when a device is attached, and "
+            "falls back to the AppleScript uploader otherwise."
+        ),
+    )
+    describe_parser.add_argument(
+        "--slot",
+        dest="upload_slot",
+        type=int,
+        default=None,
+        help="Target slot for a USB upload. Required with --upload-via usb.",
     )
     describe_parser.add_argument(
         "--upload-script",
@@ -233,12 +369,19 @@ def run_generate(args: argparse.Namespace) -> int:
     catalog = ModelCatalog(args.dataset)
     chain = load_chain_spec(args.chain)
     template = load_json_file(args.template)
+    try:
+        post_write = _build_upload_hook(args)
+    except UploadOptionError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+
     return _generate_from_chain(
         chain,
         args,
         catalog,
         template,
         default_output=lambda preset: args.chain.with_suffix(".hlx"),
+        post_write=post_write,
     )
 
 
@@ -329,22 +472,11 @@ def run_describe(args: argparse.Namespace) -> int:
         print(f"LLM error: {exc}", file=sys.stderr)
         return 1
 
-    post_write: Callable[[Path], None] | None = None
-    if getattr(args, "upload", False):
-        if sys.platform != "darwin":
-            print("--upload is only supported on macOS.", file=sys.stderr)
-            return 1
-        script_path = args.upload_script or DEFAULT_UPLOAD_SCRIPT
-        upload_mode = (getattr(args, "upload_mode", "auto") or "auto").lower()
-
-        def _post_write(output_path: Path) -> None:
-            _upload_via_script(script_path, output_path, upload_mode)
-            print(
-                f"Triggered HX Edit upload for {output_path} "
-                f"(mode: {upload_mode})"
-            )
-
-        post_write = _post_write
+    try:
+        post_write = _build_upload_hook(args)
+    except UploadOptionError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
 
     return _generate_from_chain(
         chain,
@@ -511,6 +643,101 @@ def _slugify(text: str) -> str:
     return slug
 
 
+class UploadOptionError(RuntimeError):
+    """Raised when the upload options do not make a usable request."""
+
+
+def _build_upload_hook(args: argparse.Namespace) -> Callable[[Path], None] | None:
+    """Build the ``post_write`` hook for ``--upload``, or ``None`` if not asked.
+
+    Shared by ``generate`` and ``describe`` so the two cannot drift: the same
+    flags mean the same thing whichever command you reach them from.
+    """
+    if not getattr(args, "upload", False):
+        return None
+
+    transport = _choose_upload_transport(getattr(args, "upload_via", None))
+
+    if transport == "usb":
+        slot = getattr(args, "upload_slot", None)
+        if slot is None:
+            raise UploadOptionError(
+                "--upload over USB needs --slot. There is no default and no "
+                "first-free-slot guessing: the upload overwrites whatever is in "
+                "the slot, so the target is always explicit."
+            )
+
+        def _usb_hook(output_path: Path) -> None:
+            _upload_via_usb(output_path, slot=slot, dataset=args.dataset)
+
+        return _usb_hook
+
+    if sys.platform != "darwin":
+        raise UploadOptionError("The AppleScript uploader is only supported on macOS.")
+
+    script_path = getattr(args, "upload_script", None) or DEFAULT_UPLOAD_SCRIPT
+    upload_mode = (getattr(args, "upload_mode", "auto") or "auto").lower()
+
+    def _script_hook(output_path: Path) -> None:
+        _upload_via_script(script_path, output_path, upload_mode)
+        print(f"Triggered HX Edit upload for {output_path} (mode: {upload_mode})")
+
+    return _script_hook
+
+
+def _choose_upload_transport(requested: str | None) -> str:
+    """Pick between the USB client and the AppleScript uploader.
+
+    USB is preferred when a device is attached: it is verifiable, it can target
+    a chosen slot, and it does not need HX Edit. The AppleScript path stays as a
+    documented fallback rather than being deleted -- it is the only option when
+    pyusb is not installed or no device is plugged in.
+    """
+    if requested is not None:
+        return requested
+    try:
+        from .device.usb import find_devices
+
+        if find_devices():
+            return "usb"
+    except Exception:  # noqa: BLE001 - no USB support just means the fallback
+        pass
+    return "applescript"
+
+
+def _upload_via_usb(
+    preset_path: Path, *, slot: int, bank: int = 0, dataset: Path | None = None
+) -> None:
+    """Send a generated preset straight to the pedal.
+
+    Uses the surgical edit path, which is the only one that can change a block's
+    model -- exactly what a freshly generated preset does.
+    """
+    from .dataset import ModelCatalog
+    from .device.commands import find_symbol_table
+    from .device.editor import apply_tone
+    from .device.symbols import DeviceSymbols
+
+    preset = json.loads(Path(preset_path).read_text())
+    symbols = DeviceSymbols.load(find_symbol_table(None))
+    name = preset.get("data", {}).get("meta", {}).get("name") or Path(preset_path).stem
+    catalog = ModelCatalog(dataset) if dataset else None
+
+    from .device.commands import _load_amp_defaults
+
+    report = apply_tone(
+        preset,
+        symbols,
+        bank=bank,
+        slot=slot,
+        name=name,
+        catalog=catalog,
+        amps=_load_amp_defaults(),
+    )
+    print(report.summary())
+    print(f"Uploaded {preset_path} to slot {slot} over USB.")
+
+
 def _upload_via_script(
     script_path: Path,
     preset_path: Path,
@@ -548,6 +775,16 @@ def main(argv: list[str] | None = None) -> int:
             return run_describe(args)
         if args.command == "device-audit":
             return run_device_audit(args)
+        if args.command in {"devices", "pull", "backup", "push"}:
+            from .device.commands import run_backup, run_devices, run_pull, run_push
+
+            handlers = {
+                "devices": run_devices,
+                "pull": run_pull,
+                "backup": run_backup,
+                "push": run_push,
+            }
+            return handlers[args.command](args)
     except ModelCatalogError as exc:
         parser.error(str(exc))
     except SymbolsError as exc:

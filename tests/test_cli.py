@@ -312,6 +312,10 @@ def test_cli_describe_upload_runs_script(
             "--ollama-model",
             "fake-model",
             "--upload",
+            # Pinned: with a device attached the transport now defaults to USB,
+            # and this test is specifically about the AppleScript fallback.
+            "--upload-via",
+            "applescript",
             "--upload-script",
             str(script_path),
         ]
