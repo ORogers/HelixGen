@@ -17,8 +17,13 @@
   - `validator.py` — Lightweight schema + semantic validation engine.
   - `inspector.py` — Renders readable tables summarizing preset contents.
   - `io.py` — File helpers for JSON/YAML chain input.
+  - `device/` — Bridges the name-addressed catalog onto the ordinals Helix hardware
+    uses. Groundwork for direct USB upload; see `docs/usb_upload_plan.md`.
 - `helix_model_information.json` — Canonical dataset defining available Helix models and their parameters.
-- `docs/` — Functional requirements and design notes.
+- `docs/` — Functional requirements and design notes:
+  - `application_flow.md` — how the application works today, end to end.
+  - `usb_upload_plan.md` — plan, research and TODO for replacing the HX Edit
+    AppleScript upload with direct USB.
 - `tests/` — Pytest-based unit suite covering generation, validation, CLI flows, and dataset integration.
 
 ## Usage
@@ -129,6 +134,21 @@ Tests rely on `helix_model_information.json`; ensure it is present in the projec
 - **tests** — the pytest suite on Python 3.13.
 - **cli round-trip** — generates and validates every chain in `docs/examples/`, guarding the acceptance criteria in the requirements doc.
 - **lint** — `ruff check` against the rule set pinned in `ruff.toml`. Both the ruff version and the rule selection are pinned so a ruff release cannot fail CI on its own; bump them together.
+
+## Direct USB Upload (in progress)
+
+`--upload` currently automates HX Edit's GUI with AppleScript, which is macOS-only
+and cannot read anything back. Work is underway to replace it with a USB client that
+writes presets to a chosen slot and reads them off the pedal.
+
+`hlxgen device-audit --symbols <path to Helix.sym>` reconciles the model catalog
+against HX Edit's symbol table, which is the lookup the device's ordinal addressing
+needs. `Helix.sym` is Line 6's file and is not distributed here — copy it from your
+own HX Edit installation (`find "/Applications/HX Edit.app" -name "Helix.sym"`). It
+is gitignored.
+
+See `docs/usb_upload_plan.md` for the protocol research, the chosen approach, and
+the remaining work.
 
 ## Requirements Reference
 Functional requirements are documented in `docs/hlxgen_functional_requirements.md`. The implementation and tests align with:
