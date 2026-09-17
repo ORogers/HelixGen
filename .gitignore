@@ -30,3 +30,4 @@ PodGo.sym
 HelixModelDefs.bin
 HelixControls.json
 HX_ModelCatalog.json
+*.models

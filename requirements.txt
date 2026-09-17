@@ -2,5 +2,10 @@
 pyyaml>=6.0
 openai>=1.14.0
 
+# USB device support (hlxgen devices/pull/backup/push).
+# pyusb also needs the libusb shared library: brew install libusb
+pyusb>=1.2.1
+msgpack>=1.0.5
+
 # Development / testing utilities
 pytest>=7.4
