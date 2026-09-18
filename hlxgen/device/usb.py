@@ -801,14 +801,28 @@ class Session:
         )
 
     def list_presets(self, *, bank: int = 0) -> bytes:
-        """Stream the raw preset listing for a bank."""
+        """Stream the raw preset listing for a bank.
+
+        Goes through :meth:`_stream_command` rather than :meth:`_command`
+        because **the reply to a stream command is itself the first page**.
+        Sending it through ``_command`` returned that page as a ``Reply`` and
+        then began collecting from page *one*, silently losing the head of the
+        listing - on an HX Stomp, the first eight rows, which is every name up
+        to slot 8.
+        """
         self._open_presets()
-        self._command(
-            op=OP_LIST_PRESETS,
-            target={KEY_BANK: bank, KEY_TARGET: 2},
-            cmd=CMD_STREAM,
+        reply, preamble = self._stream_command(
+            op=OP_LIST_PRESETS, target={KEY_BANK: bank, KEY_TARGET: 2}
         )
-        return self.read_stream()
+        if reply is not None and reply.is_empty_answer:
+            return b""
+
+        # Only the 8-byte stream prefix is dropped, not the envelope behind it:
+        # unlike a slot read, this stream's key 104 is an *array* of rows that
+        # arrives complete across the pages, so it is returned whole for the
+        # caller to unpack. (`parse_stream_preamble` is document-specific - it
+        # insists key 104 is a str, which a listing's never is.)
+        return preamble[STREAM_PREFIX:] + self.read_stream()
 
     # -- writes ------------------------------------------------------------
 

@@ -90,6 +90,12 @@ logger.propagate = False
 
 _OPENAI_CLIENT: Any | None = None
 
+#: Ceiling on a single Ollama round trip. Generous, because a large local model
+#: legitimately takes minutes on one call - but never unbounded: without it a
+#: stalled server blocks the caller forever, which in the desktop UI meant a
+#: worker thread outliving its window and aborting the process at teardown.
+OLLAMA_TIMEOUT_SECONDS = 600
+
 
 def generate_chain_from_prompt(
     prompt: str,
@@ -99,8 +105,19 @@ def generate_chain_from_prompt(
     *,
     backend: str = "ollama",
     openai_model: str | None = None,
+    on_progress: Callable[[str], None] | None = None,
 ) -> dict[str, Any]:
-    """Return a signal chain dictionary generated from a natural-language prompt."""
+    """Return a signal chain dictionary generated from a natural-language prompt.
+
+    ``on_progress``, when provided, is called with the same human-readable
+    status messages that are otherwise only sent to ``logger`` - one per LLM
+    round trip. It is optional and purely additive: omitting it reproduces
+    today's CLI behaviour exactly.
+    """
+
+    def _report(message: str) -> None:
+        if on_progress is not None:
+            on_progress(message)
 
     call_llm = _build_llm_caller(
         backend=backend,
@@ -109,6 +126,7 @@ def generate_chain_from_prompt(
         openai_model=openai_model,
     )
     logger.info("Requesting initial block selection for prompt: %s", prompt)
+    _report("Requesting initial block selection...")
     full_prompt = _compose_prompt(prompt, catalog)
     response_text = call_llm(full_prompt)
     spec = _parse_chain(response_text)
@@ -156,6 +174,10 @@ def generate_chain_from_prompt(
         len(resolved_models),
         ", ".join(model.display_name for model in resolved_models),
     )
+    _report(
+        f"Selected {len(resolved_models)} block(s): "
+        + ", ".join(model.display_name for model in resolved_models)
+    )
 
     if resolved_models:
         _populate_block_parameters_with_llm(
@@ -163,8 +185,10 @@ def generate_chain_from_prompt(
             call_llm=call_llm,
             chain=chain,
             models=resolved_models,
+            on_progress=on_progress,
         )
 
+    _report("Chain generation complete.")
     return chain
 
 
@@ -270,7 +294,7 @@ def _call_ollama(endpoint: str, model_name: str, prompt: str) -> str:
         method="POST",
     )
     try:
-        with request.urlopen(req) as resp:
+        with request.urlopen(req, timeout=OLLAMA_TIMEOUT_SECONDS) as resp:
             body = resp.read().decode("utf-8")
     except error.HTTPError as exc:
         detail = ""
@@ -518,7 +542,12 @@ def _populate_block_parameters_with_llm(
     call_llm: Callable[[str], str],
     chain: dict[str, Any],
     models: list[ModelDefinition],
+    on_progress: Callable[[str], None] | None = None,
 ) -> None:
+    def _report(message: str) -> None:
+        if on_progress is not None:
+            on_progress(message)
+
     chain_title = chain.get("meta", {}).get("name") or chain.get("title") or "Generated Tone"
     ordered_block_names = [model.display_name for model in models]
 
@@ -535,9 +564,11 @@ def _populate_block_parameters_with_llm(
                 "Skipping parameter selection for cab block '%s'; using defaults.",
                 model.display_name,
             )
+            _report(f"Skipping '{model.display_name}' (cab defaults used).")
             continue
         if not parameter_summary:
             logger.info("No adjustable parameters found for block '%s'", model.display_name)
+            _report(f"No adjustable parameters for '{model.display_name}'.")
             continue
 
         logger.info(
@@ -545,6 +576,10 @@ def _populate_block_parameters_with_llm(
             index + 1,
             len(models),
             model.display_name,
+        )
+        _report(
+            f"Setting parameters for block {index + 1}/{len(models)}: "
+            f"{model.display_name}..."
         )
 
         parameter_prompt = _compose_parameter_prompt(
@@ -574,8 +609,10 @@ def _populate_block_parameters_with_llm(
                 model.display_name,
                 normalized_parameters,
             )
+            _report(f"Parameters set for '{model.display_name}'.")
         else:
             logger.info("LLM did not specify parameters for '%s'; defaults will be used.", model.display_name)
+            _report(f"Using defaults for '{model.display_name}'.")
 
 
 def _compose_parameter_prompt(
