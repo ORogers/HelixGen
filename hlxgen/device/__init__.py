@@ -19,6 +19,12 @@ from .resolve import (
 )
 from .symbols import DeviceSymbols, SymbolsError
 
+# hlxgen.device.usb / hlxgen.device.commands are deliberately NOT imported
+# here. They pull in msgpack and pyusb, which are only needed for real USB
+# device I/O (the CLI's devices/pull/backup/push commands, and hlxgen_ui) -
+# everything else must keep working with neither installed. Import them
+# directly, e.g. `from hlxgen.device.usb import find_devices, Session`.
+
 __all__ = [
     "AuditReport",
     "DeviceSymbols",

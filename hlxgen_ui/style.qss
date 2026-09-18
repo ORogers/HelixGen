@@ -1,0 +1,352 @@
+/* Design tokens (Qt QSS has no variables, so these are just the literal
+   palette used consistently below):
+
+   app background   #17181c      card border        #2c2e35
+   card background  #1f2024      input background   #26272c
+   card bg (recessed) #1b1c20    input border        #35373f
+   text primary     #eceef2      text muted          #93969f
+   accent (primary) #7c5cff      accent hover        #8f73ff
+   success          #3fb950      running/amber       #d29922
+   failure          #f85149
+
+   Layout: each panel is a "card" - a QWidget with WA_StyledBackground set
+   and objectName "card", drawn as a rounded, bordered surface floating on
+   the app background, with a drop shadow applied in Python (style.py) for
+   real depth. Splitter handles are transparent gutters, not visible bars. */
+
+QMainWindow, #appBackground {
+    background: #17181c;
+}
+
+QWidget#card {
+    background: #1f2024;
+    border: 1px solid #2c2e35;
+    border-radius: 12px;
+}
+
+QLabel#appTitle {
+    color: #eceef2;
+    font-size: 18pt;
+    font-weight: 700;
+}
+
+QLabel#appSubtitle {
+    color: #93969f;
+    font-size: 9.5pt;
+}
+
+QLabel#panelTitle {
+    color: #eceef2;
+    font-weight: 700;
+    font-size: 12.5pt;
+    padding-bottom: 2px;
+}
+
+QSplitter::handle {
+    background: transparent;
+}
+
+/* -- Buttons -------------------------------------------------------- */
+
+QPushButton {
+    background: #2a2c33;
+    color: #eceef2;
+    border: 1px solid #383a42;
+    border-radius: 8px;
+    padding: 8px 16px;
+    font-weight: 500;
+}
+
+QPushButton:hover {
+    background: #32343c;
+    border-color: #45474f;
+}
+
+QPushButton:pressed {
+    background: #26282e;
+}
+
+QPushButton:disabled {
+    background: #232429;
+    color: #5b5d64;
+    border-color: #2a2c32;
+}
+
+QPushButton#primaryButton {
+    background: #7c5cff;
+    color: #ffffff;
+    border: 1px solid #7c5cff;
+    font-weight: 700;
+    padding: 10px 18px;
+}
+
+QPushButton#primaryButton:hover {
+    background: #8f73ff;
+    border-color: #8f73ff;
+}
+
+QPushButton#primaryButton:pressed {
+    background: #6b4de8;
+    border-color: #6b4de8;
+}
+
+QPushButton#primaryButton:disabled {
+    background: #34313f;
+    color: #726f80;
+    border-color: #34313f;
+}
+
+/* -- Inputs ----------------------------------------------------------- */
+
+QPlainTextEdit, QLineEdit {
+    background: #26272c;
+    color: #eceef2;
+    border: 1px solid #35373f;
+    border-radius: 8px;
+    padding: 8px;
+    selection-background-color: #7c5cff;
+}
+
+QPlainTextEdit:focus, QLineEdit:focus {
+    border: 1px solid #7c5cff;
+}
+
+QPlainTextEdit:disabled, QLineEdit:disabled {
+    color: #6b6e76;
+}
+
+QComboBox {
+    background: #26272c;
+    color: #eceef2;
+    border: 1px solid #35373f;
+    border-radius: 8px;
+    padding: 7px 10px;
+}
+
+QComboBox:hover {
+    border-color: #45474f;
+}
+
+QComboBox:focus {
+    border: 1px solid #7c5cff;
+}
+
+QComboBox::drop-down {
+    border: none;
+    width: 22px;
+}
+
+QComboBox QAbstractItemView {
+    background: #201f26;
+    color: #eceef2;
+    border: 1px solid #35373f;
+    border-radius: 8px;
+    outline: none;
+    selection-background-color: #7c5cff;
+    padding: 4px;
+}
+
+QLabel {
+    color: #d5d7dc;
+}
+
+/* -- Lists / tables ----------------------------------------------------- */
+
+QListWidget, QTableWidget {
+    background: #1b1c20;
+    color: #eceef2;
+    border: 1px solid #2c2e35;
+    border-radius: 8px;
+    outline: none;
+    padding: 4px;
+    gridline-color: #2c2e35;
+}
+
+QListWidget::item {
+    padding: 7px 8px;
+    border-radius: 6px;
+}
+
+QListWidget::item:hover {
+    background: #26282f;
+}
+
+QListWidget::item:selected {
+    background: #3a2f66;
+    color: #eceef2;
+}
+
+QTableWidget::item {
+    padding: 4px 6px;
+}
+
+QTableWidget::item:selected {
+    background: #3a2f66;
+    color: #eceef2;
+}
+
+QHeaderView::section {
+    background: #1b1c20;
+    color: #93969f;
+    border: none;
+    border-bottom: 1px solid #2c2e35;
+    padding: 6px 6px;
+    font-weight: 600;
+}
+
+QTableCornerButton::section {
+    background: #1b1c20;
+    border: none;
+}
+
+/* -- Scrollbars (thin, unobtrusive) --------------------------------- */
+
+QScrollBar:vertical {
+    background: transparent;
+    width: 10px;
+    margin: 2px;
+}
+
+QScrollBar::handle:vertical {
+    background: #3a3c44;
+    border-radius: 4px;
+    min-height: 24px;
+}
+
+QScrollBar::handle:vertical:hover {
+    background: #47494f;
+}
+
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+    height: 0px;
+}
+
+QScrollBar:horizontal {
+    background: transparent;
+    height: 10px;
+    margin: 2px;
+}
+
+QScrollBar::handle:horizontal {
+    background: #3a3c44;
+    border-radius: 4px;
+    min-width: 24px;
+}
+
+/* -- Status labels ---------------------------------------------------- */
+
+QLabel#generationStatus, QLabel#uploadStatus {
+    font-weight: 600;
+}
+
+QLabel#generationStatus[state="running"],
+QLabel#uploadStatus[state="running"] {
+    color: #d29922;
+}
+
+QLabel#generationStatus[state="success"],
+QLabel#uploadStatus[state="success"] {
+    color: #3fb950;
+}
+
+QLabel#generationStatus[state="failure"],
+QLabel#uploadStatus[state="failure"] {
+    color: #f85149;
+}
+
+QLabel#slotStatus, QLabel#previewEmpty, QLabel#generationEmpty {
+    color: #75777f;
+    font-style: italic;
+}
+
+QLabel#sectionLabel {
+    color: #93969f;
+    font-weight: 600;
+    font-size: 9pt;
+}
+
+QLabel#deviceName {
+    color: #eceef2;
+    font-weight: 600;
+}
+
+QFrame#divider {
+    background: #2c2e35;
+    max-height: 1px;
+    border: none;
+}
+
+/* -- Signal chain ------------------------------------------------------- */
+
+QWidget#chip {
+    background: #26272e;
+    border: 1px solid #383a44;
+    border-radius: 10px;
+    min-width: 120px;
+}
+
+QWidget#chip[state="bypassed"] {
+    background: #202128;
+    border: 1px dashed #3a3c45;
+}
+
+QLabel#chipName {
+    color: #eceef2;
+    font-weight: 600;
+}
+
+QLabel#chipCaption {
+    color: #8b8e97;
+    font-size: 8.5pt;
+}
+
+QWidget#chip[state="bypassed"] QLabel#chipName,
+QWidget#chip[state="bypassed"] QLabel#chipCaption {
+    color: #6d707a;
+}
+
+QLabel#chainArrow {
+    color: #7c5cff;
+    font-size: 14pt;
+    font-weight: 700;
+}
+
+QCheckBox {
+    color: #d5d7dc;
+    spacing: 8px;
+    padding: 2px 0;
+}
+
+QCheckBox::indicator {
+    width: 16px;
+    height: 16px;
+    border: 1px solid #45474f;
+    border-radius: 4px;
+    background: #26272c;
+}
+
+QCheckBox::indicator:hover {
+    border-color: #7c5cff;
+}
+
+QCheckBox::indicator:checked {
+    background: #7c5cff;
+    border-color: #7c5cff;
+    image: none;
+}
+
+QCheckBox:disabled {
+    color: #6b6e76;
+}
+
+QSpinBox {
+    background: #26272c;
+    color: #eceef2;
+    border: 1px solid #35373f;
+    border-radius: 8px;
+    padding: 6px 8px;
+}
+
+QSpinBox:focus {
+    border: 1px solid #7c5cff;
+}

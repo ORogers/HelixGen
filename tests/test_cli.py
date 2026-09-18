@@ -23,7 +23,7 @@ def _fake_ollama(
     per block asking for that block's parameters.
     """
 
-    def fake_urlopen(request_obj: Any):
+    def fake_urlopen(request_obj: Any, timeout: float | None = None):
         prompt = json.loads(request_obj.data.decode("utf-8"))["prompt"]
         body: dict[str, object]
         if "Available parameters:" in prompt:
@@ -369,7 +369,7 @@ def test_cli_describe_reports_invalid_llm_json(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture,
 ) -> None:
-    def fake_urlopen(_: Any):
+    def fake_urlopen(_: Any, timeout: float | None = None):
         class _Response:
             def __enter__(self):
                 return self
@@ -411,7 +411,7 @@ def test_cli_describe_reports_array_response(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture,
 ) -> None:
-    def fake_urlopen(_: Any):
+    def fake_urlopen(_: Any, timeout: float | None = None):
         class _Response:
             def __enter__(self):
                 return self
@@ -463,7 +463,7 @@ def test_cli_describe_reports_http_error(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture,
 ) -> None:
-    def fake_urlopen(_: Any):
+    def fake_urlopen(_: Any, timeout: float | None = None):
         raise url_error.HTTPError(
             url="http://localhost:11434/api/generate",
             code=404,

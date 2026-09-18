@@ -20,6 +20,12 @@ jobs:
   test:
     name: tests
     runs-on: ubuntu-latest
+    env:
+      # hlxgen_ui's PySide6 tests need a Qt platform plugin; there's no
+      # display on this runner, so run headless. Set globally (not just in
+      # tests/ui/conftest.py) so it also covers any ad-hoc `python -m
+      # hlxgen_ui` invocation in this job.
+      QT_QPA_PLATFORM: offscreen
     steps:
       - uses: actions/checkout@v4
 
@@ -28,6 +34,15 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
           cache-dependency-path: requirements.txt
+
+      # PySide6 (Qt) needs a handful of shared libraries this base image
+      # doesn't ship, even to run headless; pyusb needs libusb's runtime.
+      # Neither is needed by the plain hlxgen CLI itself.
+      - name: Install system libraries for PySide6 and pyusb
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libegl1 libgl1 libxkbcommon0 libdbus-1-3 libusb-1.0-0
 
       - name: Install dependencies
         run: |
@@ -87,4 +102,4 @@ jobs:
       - run: python -m pip install ruff==0.16.7
 
       - name: Ruff
-        run: python -m ruff check hlxgen/ tests/
+        run: python -m ruff check hlxgen/ hlxgen_ui/ tests/

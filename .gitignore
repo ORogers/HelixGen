@@ -24,6 +24,10 @@ build/
 *.hlx
 !HXTemplate.hlx
 
+# Device backups pulled off a pedal (hlxgen pull/backup). Someone's presets,
+# and Line 6 data: never committed.
+*.msgpack
+
 # Line 6 reference data imported from a local HX Edit install — never committed.
 Helix.sym
 PodGo.sym
