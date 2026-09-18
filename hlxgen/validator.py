@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .dataset import ModelCatalog, ModelCatalogError
+from .dataset import ModelCatalog, ModelCatalogError, ModelDefinition
 
 
 class ValidationError(RuntimeError):
@@ -178,4 +178,65 @@ class PresetValidator:
                     definition.normalize(value)
                 except ModelCatalogError as exc:  # reuse error messaging
                     errors.append(f"{key}: {exc}")
+
+        errors.extend(self._validate_snapshots(tone, dsp0))
         return errors
+
+    def _validate_snapshots(self, tone: dict[str, Any], dsp0: dict[str, Any]) -> list[str]:
+        """Check that snapshot bypass states and controllers point at real blocks."""
+        errors: list[str] = []
+        controllers = tone.get("controller", {}).get("dsp0", {})
+        if not isinstance(controllers, dict):
+            return ["controller.dsp0: must be an object."]
+        for block_key, parameters in controllers.items():
+            if block_key not in dsp0:
+                errors.append(f"controller.dsp0.{block_key}: no such block in dsp0")
+                continue
+            model = self._catalogued_model(dsp0[block_key])
+            if model is None or not isinstance(parameters, dict):
+                continue
+            errors.extend(
+                f"controller.dsp0.{block_key}: parameter '{name}' not valid for model "
+                f"'{model.display_name}'"
+                for name in parameters
+                if name not in model.parameters
+            )
+
+        for snapshot_key, snapshot in tone.items():
+            if not snapshot_key.startswith("snapshot") or not isinstance(snapshot, dict):
+                continue
+            states = snapshot.get("blocks", {}).get("dsp0", {})
+            for block_key, state in states.items():
+                if block_key not in dsp0:
+                    errors.append(f"{snapshot_key}.blocks.dsp0.{block_key}: no such block in dsp0")
+                elif not isinstance(state, bool):
+                    errors.append(f"{snapshot_key}.blocks.dsp0.{block_key}: must be true or false")
+
+            values = snapshot.get("controllers", {}).get("dsp0", {})
+            for block_key, parameters in values.items():
+                if not isinstance(parameters, dict):
+                    errors.append(f"{snapshot_key}.controllers.dsp0.{block_key}: must be an object")
+                    continue
+                model = self._catalogued_model(dsp0.get(block_key))
+                for name, entry in parameters.items():
+                    location = f"{snapshot_key}.controllers.dsp0.{block_key}.{name}"
+                    if name not in controllers.get(block_key, {}):
+                        errors.append(f"{location}: no matching controller assignment")
+                        continue
+                    if not isinstance(entry, dict) or "@value" not in entry:
+                        errors.append(f"{location}: missing '@value'")
+                        continue
+                    if model is not None and name in model.parameters:
+                        try:
+                            model.parameters[name].normalize(entry["@value"])
+                        except ModelCatalogError as exc:
+                            errors.append(f"{location}: {exc}")
+        return errors
+
+    def _catalogued_model(self, block: Any) -> ModelDefinition | None:
+        if not isinstance(block, dict):
+            return None
+        model_name = block.get("@model")
+        if not isinstance(model_name, str) or not self.catalog.has_model(model_name):
+            return None
+        return self.catalog.get(model_name)

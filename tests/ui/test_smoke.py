@@ -74,14 +74,19 @@ def no_real_ollama(monkeypatch: pytest.MonkeyPatch):
 def _stub_llm(
     monkeypatch: pytest.MonkeyPatch, *, title: str = "Smoke Test Tone"
 ) -> list[dict[str, object]]:
-    """Answer both LLM rounds; returns the options each call was made with."""
-    chain = json.dumps({"title": title, "blocks": ["Horizon Drive"]})
-    params = json.dumps({"blocks": {"block1": {}}})
+    """Answer every LLM round; returns the options each call was made with."""
+    answers = {
+        "chain": json.dumps({"title": title, "blocks": ["Horizon Drive"]}),
+        "parameters": json.dumps({"blocks": {"block1": {}}}),
+        "snapshots": json.dumps(
+            {"snapshots": [{"name": n, "blocks": {}} for n in ("Clean", "Crunch", "Lead")]}
+        ),
+    }
     calls: list[dict[str, object]] = []
 
     def fake_call(endpoint: str, model_name: str, llm_request, **options) -> str:
         calls.append({"model": model_name, **options})
-        return chain if llm_request.schema_name == "chain" else params
+        return answers[llm_request.schema_name]
 
     monkeypatch.setattr("hlxgen.llm._call_ollama", fake_call)
     return calls
@@ -425,8 +430,9 @@ def test_thinking_level_and_context_reach_the_llm(qtbot, project_dataset_files, 
     page._num_ctx.setValue(16384)
     _generate(qtbot, window)
 
-    assert [call["think"] for call in calls] == ["medium", "medium"]
-    assert [call["num_ctx"] for call in calls] == [16384, 16384]
+    # Every round of the generation runs at the chosen level and context.
+    assert [call["think"] for call in calls] == ["medium"] * 3
+    assert [call["num_ctx"] for call in calls] == [16384] * 3
 
 
 def test_settings_button_swaps_pages(qtbot):

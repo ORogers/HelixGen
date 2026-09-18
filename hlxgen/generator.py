@@ -3,7 +3,13 @@ import copy
 from dataclasses import dataclass, field
 from typing import Any
 
-from .dataset import CONTINUOUS, ModelCatalog, ModelCatalogError, ModelDefinition
+from .dataset import (
+    CONTINUOUS,
+    ModelCatalog,
+    ModelCatalogError,
+    ModelDefinition,
+    ParameterDefinition,
+)
 
 DEFAULT_APPLICATION = "HX Edit"
 DEFAULT_APP_VERSION = 58851328  # Matches HX Edit 3.70 numeric encoding
@@ -11,6 +17,10 @@ DEFAULT_DEVICE_ID = 2162694  # HX Stomp / HX Edit identifiers observed in refere
 DEFAULT_DEVICE_VERSION = 57671680  # HX Stomp firmware encoding (e.g. 3.60)
 DEFAULT_TEMPLATE = "HXTemplate.hlx"
 DEFAULT_FOOTSWITCH_LED = 13676288
+# The controller source HX Edit writes for "Snapshots" on HX Stomp-family devices.
+SNAPSHOT_CONTROLLER = 9
+# Longest snapshot name the device displays; HX Edit truncates anything longer.
+SNAPSHOT_NAME_LIMIT = 10
 
 
 @dataclass
@@ -142,6 +152,7 @@ def generate_preset(
 
     footswitch_assignments: dict[str, dict[str, Any]] = {}
     automatic_fs_candidates: list[tuple[str, ModelDefinition, int]] = []
+    block_models: list[ModelDefinition] = []
 
     for index, block_spec in enumerate(blocks_spec):
         if not isinstance(block_spec, dict):
@@ -151,6 +162,7 @@ def generate_preset(
         if not model_identifier:
             raise ModelCatalogError("Each block must define a 'model'.")
         model = catalog.get(model_identifier)
+        block_models.append(model)
         block_id = f"block{index}"
 
         block_payload: dict[str, Any] = {
@@ -185,29 +197,9 @@ def generate_preset(
                 raise ModelCatalogError(
                     f"Parameter '{param_name}' not valid for model '{model.display_name}'."
                 )
-            definition = model.parameters[param_name]
-            normalized_value = definition.normalize(value)
-            block_payload[param_name] = normalized_value
-            if definition.value_type == CONTINUOUS:
-                original_number = None
-                with contextlib.suppress(TypeError, ValueError):
-                    original_number = float(value)
-                if (
-                    definition.min_value is not None
-                    and original_number is not None
-                    and original_number < definition.min_value
-                ):
-                    report.add_warning(
-                        f"Parameter '{param_name}' on block '{block_id}' clamped to minimum."
-                    )
-                if (
-                    definition.max_value is not None
-                    and original_number is not None
-                    and original_number > definition.max_value
-                ):
-                    report.add_warning(
-                        f"Parameter '{param_name}' on block '{block_id}' clamped to maximum."
-                    )
+            block_payload[param_name] = _normalize_parameter(
+                model.parameters[param_name], value, f"block '{block_id}'", report
+            )
 
         dsp_blocks[block_id] = block_payload
         template_block = template_dsp0.get(block_id) if isinstance(template_dsp0, dict) else None
@@ -288,16 +280,13 @@ def generate_preset(
     ):
         tone_section["global"]["@cursor_group"] = "block0"
 
-    block_keys = [f"block{index}" for index in range(len(blocks_spec))]
-    for snap_key, snapshot in tone_section.items():
-        if not snap_key.startswith("snapshot"):
-            continue
-        if not isinstance(snapshot, dict):
-            continue
-        blocks_map = snapshot.setdefault("blocks", {})
-        dsp_map = blocks_map.setdefault("dsp0", {})
-        for block_key in block_keys:
-            dsp_map.setdefault(block_key, True)
+    _apply_snapshots(
+        tone_section,
+        chain.get("snapshots"),
+        blocks_spec,
+        block_models,
+        report,
+    )
 
     footswitch_section = copy.deepcopy(template_tone.get("footswitch", {})) if isinstance(template_tone, dict) else {}
     if footswitch_assignments:
@@ -379,6 +368,221 @@ def generate_preset(
     preset["data"] = data_section
 
     return preset, report
+
+
+@dataclass
+class _SnapshotSpec:
+    name: str | None
+    enabled: dict[str, bool]
+    parameters: dict[str, dict[str, Any]]
+
+
+def _apply_snapshots(
+    tone: dict[str, Any],
+    snapshots_spec: Any,
+    blocks_spec: list[dict[str, Any]],
+    block_models: list[ModelDefinition],
+    report: GenerationReport,
+) -> None:
+    """Write per-snapshot bypass states and parameter values into ``tone``.
+
+    A block's own ``@enabled`` and parameter values are the baseline; a snapshot
+    only records how it differs. Any parameter that one snapshot changes becomes
+    snapshot-controlled, so every snapshot then stores its own value for it. The
+    ``dsp0`` block values are finally synced to the current snapshot, which is
+    what the device shows when the preset loads.
+    """
+    dsp0 = tone["dsp0"]
+    block_keys = [f"block{index}" for index in range(len(blocks_spec))]
+    snapshot_keys = sorted(
+        (
+            key
+            for key, value in tone.items()
+            if key.startswith("snapshot")
+            and key[len("snapshot"):].isdigit()
+            and isinstance(value, dict)
+        ),
+        key=lambda key: int(key[len("snapshot"):]),
+    )
+    specs = _parse_snapshot_specs(
+        snapshots_spec, len(snapshot_keys), blocks_spec, block_models, report
+    )
+
+    controlled: dict[str, dict[str, ParameterDefinition]] = {}
+    for spec in specs:
+        for block_key, parameters in spec.parameters.items():
+            model = block_models[block_keys.index(block_key)]
+            for name in parameters:
+                controlled.setdefault(block_key, {})[name] = model.parameters[name]
+
+    for position, snapshot_key in enumerate(snapshot_keys):
+        snapshot = tone[snapshot_key]
+        spec = specs[position] if position < len(specs) else _SnapshotSpec(None, {}, {})
+
+        dsp_map = snapshot.setdefault("blocks", {}).setdefault("dsp0", {})
+        for block_key in block_keys:
+            dsp_map[block_key] = spec.enabled.get(block_key, bool(dsp0[block_key]["@enabled"]))
+
+        if controlled:
+            controller_map = snapshot.setdefault("controllers", {}).setdefault("dsp0", {})
+            for block_key, parameters in controlled.items():
+                overrides = spec.parameters.get(block_key, {})
+                for name in parameters:
+                    controller_map.setdefault(block_key, {})[name] = {
+                        "@fs_enabled": False,
+                        "@value": overrides.get(name, dsp0[block_key][name]),
+                    }
+
+        if spec.name:
+            snapshot["@name"] = spec.name
+            snapshot["@custom_name"] = True
+
+    if controlled:
+        controller_section = tone.setdefault("controller", {}).setdefault("dsp0", {})
+        for block_key, parameters in controlled.items():
+            for name, definition in parameters.items():
+                low, high = definition.controller_range()  # checked when parsing
+                controller_section.setdefault(block_key, {})[name] = {
+                    "@controller": SNAPSHOT_CONTROLLER,
+                    "@max": high,
+                    "@min": low,
+                }
+
+    current = tone.get("global", {}).get("@current_snapshot", 0)
+    if isinstance(current, int) and 0 <= current < len(snapshot_keys):
+        active = tone[snapshot_keys[current]]
+        for block_key in block_keys:
+            dsp0[block_key]["@enabled"] = active["blocks"]["dsp0"][block_key]
+        for block_key, parameters in controlled.items():
+            for name in parameters:
+                dsp0[block_key][name] = active["controllers"]["dsp0"][block_key][name]["@value"]
+
+
+def _parse_snapshot_specs(
+    snapshots_spec: Any,
+    available: int,
+    blocks_spec: list[dict[str, Any]],
+    block_models: list[ModelDefinition],
+    report: GenerationReport,
+) -> list[_SnapshotSpec]:
+    if snapshots_spec is None:
+        return []
+    if not isinstance(snapshots_spec, list):
+        raise ModelCatalogError("'snapshots' must be a list of snapshot definitions.")
+    if len(snapshots_spec) > available:
+        raise ModelCatalogError(
+            f"Chain defines {len(snapshots_spec)} snapshots but the template only "
+            f"provides {available}."
+        )
+
+    specs: list[_SnapshotSpec] = []
+    for number, entry in enumerate(snapshots_spec, start=1):
+        if not isinstance(entry, dict):
+            raise ModelCatalogError(f"Snapshot {number} must be an object.")
+
+        name = entry.get("name")
+        if name is not None:
+            if not isinstance(name, str):
+                raise ModelCatalogError(f"Snapshot {number} name must be a string.")
+            name = name.strip()
+            if len(name) > SNAPSHOT_NAME_LIMIT:
+                report.add_warning(
+                    f"Snapshot {number} name '{name}' truncated to "
+                    f"{SNAPSHOT_NAME_LIMIT} characters."
+                )
+                name = name[:SNAPSHOT_NAME_LIMIT].rstrip()
+
+        blocks = entry.get("blocks", {})
+        if not isinstance(blocks, dict):
+            raise ModelCatalogError(
+                f"Snapshot {number} 'blocks' must map block indexes to block settings."
+            )
+
+        spec = _SnapshotSpec(name=name or None, enabled={}, parameters={})
+        for raw_index, settings in blocks.items():
+            index = _block_index(raw_index, len(blocks_spec), number)
+            block_key = f"block{index}"
+            model = block_models[index]
+            if not isinstance(settings, dict):
+                raise ModelCatalogError(
+                    f"Snapshot {number} settings for block {index} must be an object."
+                )
+
+            if "enabled" in settings:
+                enabled = settings["enabled"]
+                if not isinstance(enabled, bool):
+                    raise ModelCatalogError(
+                        f"Snapshot {number} 'enabled' for block {index} must be true or false."
+                    )
+                if blocks_spec[index].get("no_snapshot_bypass"):
+                    raise ModelCatalogError(
+                        f"Snapshot {number} sets 'enabled' on block {index}, which is "
+                        "marked no_snapshot_bypass."
+                    )
+                spec.enabled[block_key] = enabled
+
+            parameters = settings.get("parameters", {})
+            if not isinstance(parameters, dict):
+                raise ModelCatalogError(
+                    f"Snapshot {number} parameters for block {index} must be a mapping."
+                )
+            for param_name, value in parameters.items():
+                if param_name.startswith("@") or param_name not in model.parameters:
+                    raise ModelCatalogError(
+                        f"Parameter '{param_name}' not valid for model '{model.display_name}'."
+                    )
+                definition = model.parameters[param_name]
+                if definition.controller_range() is None:
+                    raise ModelCatalogError(
+                        f"Parameter '{param_name}' on '{model.display_name}' cannot be "
+                        "controlled by snapshots."
+                    )
+                spec.parameters.setdefault(block_key, {})[param_name] = _normalize_parameter(
+                    definition, value, f"block '{block_key}' in snapshot {number}", report
+                )
+        specs.append(spec)
+    return specs
+
+
+def _block_index(raw_index: Any, block_count: int, snapshot_number: int) -> int:
+    if isinstance(raw_index, int) and not isinstance(raw_index, bool):
+        index = raw_index
+    elif isinstance(raw_index, str) and raw_index.strip().isdigit():
+        index = int(raw_index.strip())
+    else:
+        raise ModelCatalogError(
+            f"Snapshot {snapshot_number} refers to block '{raw_index}'; use the block's "
+            "zero-based index in the chain."
+        )
+    if not 0 <= index < block_count:
+        raise ModelCatalogError(
+            f"Snapshot {snapshot_number} refers to block {index}, but the chain has "
+            f"{block_count} blocks."
+        )
+    return index
+
+
+def _normalize_parameter(
+    definition: ParameterDefinition,
+    value: Any,
+    location: str,
+    report: GenerationReport,
+) -> Any:
+    normalized = definition.normalize(value)
+    if definition.value_type == CONTINUOUS:
+        original_number = None
+        with contextlib.suppress(TypeError, ValueError):
+            original_number = float(value)
+        if original_number is not None:
+            if definition.min_value is not None and original_number < definition.min_value:
+                report.add_warning(
+                    f"Parameter '{definition.name}' on {location} clamped to minimum."
+                )
+            if definition.max_value is not None and original_number > definition.max_value:
+                report.add_warning(
+                    f"Parameter '{definition.name}' on {location} clamped to maximum."
+                )
+    return normalized
 
 
 def _merge_dicts(base: dict[str, Any] | None, override: dict[str, Any] | None) -> dict[str, Any]:

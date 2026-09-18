@@ -21,6 +21,10 @@ def _fake_call(endpoint: str, model_name: str, llm_request: LLMRequest, **_: obj
     _ = endpoint, model_name
     if llm_request.schema_name == "parameters":
         return json.dumps({"blocks": {"block1": {}}})
+    if llm_request.schema_name == "snapshots":
+        return json.dumps(
+            {"snapshots": [{"name": name, "blocks": {}} for name in ("Clean", "Crunch", "Lead")]}
+        )
     return json.dumps({"title": "Clean Tone", "blocks": ["Horizon Drive"]})
 
 
@@ -56,6 +60,8 @@ def test_on_progress_receives_ordered_status_messages(
     assert any(m.startswith("Selected 1 block(s): Horizon Drive (") for m in messages)
     assert "Setting parameters for 1 block(s)..." in messages
     assert any(m.startswith("Parameters set for 1 block(s) (") for m in messages)
+    assert "Designing 3 snapshots..." in messages
+    assert any(m.startswith("Snapshots: Clean, Crunch, Lead (") for m in messages)
     # Each LLM step and the whole run report how long they took.
     assert re.fullmatch(r"Chain generation complete \(\d+\.\ds total\)\.", messages[-1])
 
@@ -74,6 +80,10 @@ def test_on_progress_reports_cab_block_skip(
         _ = endpoint, model_name
         if llm_request.schema_name == "parameters":
             return json.dumps({"blocks": {}})
+        if llm_request.schema_name == "snapshots":
+            return json.dumps(
+                {"snapshots": [{"name": "S", "blocks": {}} for _ in range(3)]}
+            )
         return json.dumps({"title": "Cab Test", "blocks": [cab_model.display_name]})
 
     monkeypatch.setattr("hlxgen.llm._call_ollama", fake_call)
