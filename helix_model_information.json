@@ -493,7 +493,7 @@
         }
       }
     },
-    "category": "Dynamics",
+    "category": "Distortion",
     "basedOn": "Xotic EP Booster",
     "internal_model_name": "HD2_DistKinkyBoost"
   },
@@ -694,7 +694,7 @@
         }
       }
     },
-    "category": "Amp",
+    "category": "Distortion",
     "basedOn": "Analogman King of Tone V4",
     "internal_model_name": "HD2_DistToneSovereign"
   },
@@ -821,7 +821,7 @@
         }
       }
     },
-    "category": "Amp",
+    "category": "Distortion",
     "basedOn": "Analogman Prince of Tone",
     "internal_model_name": "HD2_DistHeirApparent"
   },
@@ -6170,7 +6170,7 @@
         }
       }
     },
-    "category": "Reverb",
+    "category": "Delay",
     "basedOn": "Line6 Original, delay with reverb inject",
     "internal_model_name": "HD2_DelayHeliosphere"
   },
@@ -7070,7 +7070,7 @@
         }
       }
     },
-    "category": "Amp",
+    "category": "Delay",
     "basedOn": "Electro-Harmonix Deluxe Memory Man",
     "internal_model_name": "HD2_DelayElephantMan"
   },
@@ -7322,7 +7322,7 @@
         }
       }
     },
-    "category": "Reverb",
+    "category": "Delay",
     "basedOn": "Line 6 Original",
     "internal_model_name": "HD2_DelaySwellAdriatic"
   },
@@ -8531,7 +8531,7 @@
         }
       }
     },
-    "category": "Reverb",
+    "category": "Delay",
     "basedOn": "Line 6 Original",
     "internal_model_name": "HD2_DelaySwellVintageDigital"
   },
@@ -11589,7 +11589,7 @@
         }
       }
     },
-    "category": "Amp",
+    "category": "Cab",
     "basedOn": "Supro S6616",
     "internal_model_name": "HD2_CabMicIr_SoupProEllipse"
   },
@@ -12223,7 +12223,7 @@
         }
       }
     },
-    "category": "Delay",
+    "category": "Dynamics",
     "basedOn": "Line 6 Original, Feedback Generator",
     "internal_model_name": "VIC_FeedbackSim"
   },
@@ -19236,7 +19236,7 @@
         }
       }
     },
-    "category": "Cab",
+    "category": "Amp",
     "basedOn": "Ben Adrian Cartographer, 1977 Traynor YBA-1",
     "internal_model_name": "HD2_AmpCartographer"
   },
@@ -22018,7 +22018,7 @@
         }
       }
     },
-    "category": "Amp",
+    "category": "Distortion",
     "basedOn": "Darkglass Electronics Microtubes B7K Ultra",
     "internal_model_name": "HD2_DistObsidian7000"
   },
@@ -23875,7 +23875,7 @@
         }
       }
     },
-    "category": "Dynamics",
+    "category": "Delay",
     "basedOn": "Line 6 Original",
     "internal_model_name": "VIC_DelayRatchet"
   },
@@ -24153,7 +24153,7 @@
         }
       }
     },
-    "category": "Pitch/Synth",
+    "category": "Delay",
     "basedOn": "Line 6 Original",
     "internal_model_name": "VIC_DelayPolySustain"
   },
@@ -24579,7 +24579,7 @@
         }
       }
     },
-    "category": "Distortion",
+    "category": "Delay",
     "basedOn": "Line 6 Original",
     "internal_model_name": "VIC_DelayStutterEdit"
   },
@@ -26524,7 +26524,7 @@
         }
       }
     },
-    "category": "Cab",
+    "category": "Amp",
     "basedOn": "Grammatico GSG 100",
     "internal_model_name": "HD2_AmpGSG100"
   },
@@ -28814,7 +28814,7 @@
         }
       }
     },
-    "category": "Amp",
+    "category": "Distortion",
     "basedOn": "Klon Centaur",
     "internal_model_name": "HD2_DistMinotaur"
   },
@@ -28896,7 +28896,7 @@
         }
       }
     },
-    "category": "Amp",
+    "category": "Distortion",
     "basedOn": "Dallas Rangemaster Treble Booster",
     "internal_model_name": "HD2_DistDerangedMaster"
   },
@@ -29122,7 +29122,7 @@
         }
       }
     },
-    "category": "Cab",
+    "category": "Amp",
     "basedOn": "Grammatico LaGrange (jumped channels)",
     "internal_model_name": "HD2_AmpGrammaticoJump"
   },
@@ -29277,7 +29277,7 @@
         }
       }
     },
-    "category": "Cab",
+    "category": "Amp",
     "basedOn": "Grammatico LaGrange (bright channel)",
     "internal_model_name": "HD2_AmpGrammaticoBrt"
   },
@@ -29587,7 +29587,7 @@
         }
       }
     },
-    "category": "Cab",
+    "category": "Amp",
     "basedOn": "Grammatico LaGrange (normal channel)",
     "internal_model_name": "HD2_AmpGrammaticoNrm"
   },
@@ -31137,7 +31137,7 @@
         }
       }
     },
-    "category": "Cab",
+    "category": "Amp",
     "basedOn": "Hiwatt DR-103 Brill",
     "internal_model_name": "HD2_AmpWhoWatt100"
   },
@@ -37145,7 +37145,7 @@
         }
       }
     },
-    "category": "Cab",
+    "category": "Amp",
     "basedOn": "Peavey 5150",
     "internal_model_name": "HD2_AmpPVPanama"
   },
@@ -41794,7 +41794,7 @@
         }
       }
     },
-    "category": "Cab",
+    "category": "Amp",
     "basedOn": "Sunn Model T (jumped channels)",
     "internal_model_name": "HD2_AmpMoonJump"
   },
@@ -41960,7 +41960,7 @@
         }
       }
     },
-    "category": "Cab",
+    "category": "Amp",
     "basedOn": "Sunn Model T (brite channel)",
     "internal_model_name": "HD2_AmpMoonBrt"
   },
@@ -42281,7 +42281,7 @@
         }
       }
     },
-    "category": "Cab",
+    "category": "Amp",
     "basedOn": "Sunn Model T (normal channel)",
     "internal_model_name": "HD2_AmpMoonNrm"
   },
@@ -44274,7 +44274,7 @@
         }
       }
     },
-    "category": "Delay",
+    "category": "Amp",
     "basedOn": "JRT 9/15",
     "internal_model_name": "HD2_AmpDividedDuo"
   },
@@ -44429,7 +44429,7 @@
         }
       }
     },
-    "category": "Cab",
+    "category": "Amp",
     "basedOn": "Silvertone 1484",
     "internal_model_name": "HD2_AmpMailOrderTwin"
   },
@@ -44540,7 +44540,7 @@
         }
       }
     },
-    "category": "Cab",
+    "category": "Amp",
     "basedOn": "Roland JC-120 Jazz Chorus",
     "internal_model_name": "HD2_AmpJazzRivet120"
   },
@@ -45005,7 +45005,7 @@
         }
       }
     },
-    "category": "Cab",
+    "category": "Amp",
     "basedOn": "Dr Z Route 66",
     "internal_model_name": "HD2_AmpInterstateZed"
   },
@@ -46083,7 +46083,7 @@
         }
       }
     },
-    "category": "Cab",
+    "category": "Amp",
     "basedOn": "EVH 5150III 100, blue channel",
     "internal_model_name": "HD2_AmpEVPanamaBlue"
   },
@@ -46238,7 +46238,7 @@
         }
       }
     },
-    "category": "Cab",
+    "category": "Amp",
     "basedOn": "EVH 5150III 100, red channel",
     "internal_model_name": "HD2_AmpEVPanamaRed"
   },
