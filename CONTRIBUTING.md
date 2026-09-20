@@ -9,7 +9,7 @@ is the only unit this has been verified on.
 Python 3.13 or newer.
 
 ```bash
-git clone https://github.com/ORogers/HelixPy.git
+git clone https://github.com/ORogers/HelixGen.git
 cd HelixGen
 python3 -m venv .venv && source .venv/bin/activate
 python3 -m pip install -e '.[dev]'
@@ -57,6 +57,12 @@ change alters a path it describes, update it in the same PR.
 **Bump `ruff.toml` and the CI pin together.** Both the version and the rule set
 are pinned deliberately, so that a ruff release cannot fail the build on its
 own.
+
+## Releases
+
+The version lives in `pyproject.toml` alone; everything else reads it back from
+the installed metadata. Tag `vX.Y.Z` on `main` and the release workflow does the
+rest. See [packaging/README.md](packaging/README.md#cutting-a-release).
 
 ## Style
 

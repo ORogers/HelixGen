@@ -5,7 +5,7 @@
 Report privately through GitHub's [security advisories][advisories] rather than
 by opening a public issue. Expect an acknowledgement within a week.
 
-[advisories]: https://github.com/ORogers/HelixPy/security/advisories/new
+[advisories]: https://github.com/ORogers/HelixGen/security/advisories/new
 
 Useful to include: what you did, what happened, and the device and firmware
 version if hardware was involved.

@@ -11,7 +11,7 @@ things worth knowing once it works.
 **A Line 6 HX device.** Everything here has been verified on an **HX Stomp**.
 Other Helix devices use the same protocol and may well work, but nobody has
 confirmed it - if you try one, please
-[say so](https://github.com/ORogers/HelixPy/issues/new/choose).
+[say so](https://github.com/ORogers/HelixGen/issues/new/choose).
 
 **HX Edit**, Line 6's own editor, [free from Line 6][hxedit]. HelixGen reads two
 data files out of it. They are Line 6's to distribute, not ours, so HelixGen
@@ -42,7 +42,7 @@ Either the app:
 2. **Right-click it and choose Open** the first time. See
    [install.md](install.md) for why macOS asks.
 
-[releases]: https://github.com/ORogers/HelixPy/releases
+[releases]: https://github.com/ORogers/HelixGen/releases
 
 Or the command line:
 
@@ -255,7 +255,7 @@ itself is open, close it - both want the same interface.
 
 **The pedal's front panel stops responding.** A session was dropped without
 being closed. Power-cycle the pedal; nothing is lost. If you can reproduce it,
-that is worth [a device report](https://github.com/ORogers/HelixPy/issues/new/choose).
+that is worth [a device report](https://github.com/ORogers/HelixGen/issues/new/choose).
 
 **"That key was rejected."** The key was not accepted by OpenAI. Check the
 whole of it was copied - they are long, and a partial paste is the usual

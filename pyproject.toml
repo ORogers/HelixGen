@@ -51,8 +51,8 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/ORogers/HelixPy"
-Issues = "https://github.com/ORogers/HelixPy/issues"
+Homepage = "https://github.com/ORogers/HelixGen"
+Issues = "https://github.com/ORogers/HelixGen/issues"
 
 [project.scripts]
 helixgen = "helixgen.cli:main"

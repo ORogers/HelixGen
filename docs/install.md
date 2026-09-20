@@ -7,7 +7,7 @@
 3. The first time you run it: **right-click the app and choose Open**, then
    click **Open** in the dialog that appears.
 
-[releases]: https://github.com/ORogers/HelixPy/releases
+[releases]: https://github.com/ORogers/HelixGen/releases
 
 ### Why macOS warns you
 
@@ -53,7 +53,7 @@ The `.dmg` bundles its own libusb, so the app needs neither step.
 ## From a clone
 
 ```bash
-git clone https://github.com/ORogers/HelixPy.git
+git clone https://github.com/ORogers/HelixGen.git
 cd HelixGen
 python3 -m venv .venv && source .venv/bin/activate
 python3 -m pip install -e '.[dev]'
