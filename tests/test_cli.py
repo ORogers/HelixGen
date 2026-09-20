@@ -6,7 +6,7 @@ from urllib import error as url_error
 
 import pytest
 
-from hlxgen import cli
+from helixgen import cli
 
 
 def _write_chain(path: Path, chain: dict[str, object]) -> None:
@@ -243,7 +243,7 @@ def test_cli_describe_generates_from_prompt(
     preset_path = tmp_path / "prompted.hlx"
 
     monkeypatch.setattr(
-        "hlxgen.llm.request.urlopen",
+        "helixgen.llm.request.urlopen",
         _fake_ollama(
             {"title": "Prompted Tone", "blocks": ["Horizon Drive"]},
             {"Drive": 0.6},
@@ -290,10 +290,10 @@ def test_cli_describe_upload_runs_script(
     script_path.write_text("-- dummy", encoding="utf-8")
 
     monkeypatch.setattr(
-        "hlxgen.llm.request.urlopen",
+        "helixgen.llm.request.urlopen",
         _fake_ollama({"title": "Upload Tone", "blocks": ["Horizon Drive"]}),
     )
-    monkeypatch.setattr("hlxgen.cli.sys.platform", "darwin")
+    monkeypatch.setattr("helixgen.cli.sys.platform", "darwin")
 
     captured_args: dict[str, Any] = {}
 
@@ -302,7 +302,7 @@ def test_cli_describe_upload_runs_script(
         captured_args["preset"] = preset
         captured_args["mode"] = mode
 
-    monkeypatch.setattr("hlxgen.cli._upload_via_script", fake_upload)
+    monkeypatch.setattr("helixgen.cli._upload_via_script", fake_upload)
 
     exit_code = cli.main(
         [
@@ -346,7 +346,7 @@ def test_cli_describe_default_output_directory(
     generated_dir = tmp_path / "generated-presets"
 
     monkeypatch.setattr(
-        "hlxgen.llm.request.urlopen",
+        "helixgen.llm.request.urlopen",
         _fake_ollama({"title": "Prompted Tone", "blocks": ["Horizon Drive"]}),
     )
     monkeypatch.chdir(tmp_path)
@@ -394,7 +394,7 @@ def test_cli_describe_reports_invalid_llm_json(
 
         return _Response()
 
-    monkeypatch.setattr("hlxgen.llm.request.urlopen", fake_urlopen)
+    monkeypatch.setattr("helixgen.llm.request.urlopen", fake_urlopen)
 
     exit_code = cli.main(
         [
@@ -448,7 +448,7 @@ def test_cli_describe_reports_array_response(
 
         return _Response()
 
-    monkeypatch.setattr("hlxgen.llm.request.urlopen", fake_urlopen)
+    monkeypatch.setattr("helixgen.llm.request.urlopen", fake_urlopen)
 
     exit_code = cli.main(
         [
@@ -487,7 +487,7 @@ def test_cli_describe_reports_http_error(
             fp=io.BytesIO(b""),
         )
 
-    monkeypatch.setattr("hlxgen.llm.request.urlopen", fake_urlopen)
+    monkeypatch.setattr("helixgen.llm.request.urlopen", fake_urlopen)
 
     exit_code = cli.main(
         [
@@ -525,7 +525,7 @@ def test_hx_edit_flag_rejects_a_path_that_is_not_an_install(
 def test_hx_edit_flag_points_the_discovery_at_a_chosen_install(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from hlxgen.device import hxedit
+    from helixgen.device import hxedit
 
     resources = tmp_path / "HX Edit.app" / "Contents" / "Resources"
     resources.mkdir(parents=True)

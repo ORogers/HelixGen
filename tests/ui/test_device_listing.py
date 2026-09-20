@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import msgpack
 
-from hlxgen_ui.device import parse_listing_names
+from helixgen_ui.device import parse_listing_names
 
 
 def _envelope(rows: list[dict]) -> bytes:

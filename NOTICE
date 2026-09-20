@@ -1,4 +1,4 @@
-HelixPy
+HelixGen
 Copyright 2025 Oliver Rogers
 
 Licensed under the Apache License, Version 2.0 (see LICENSE).
@@ -20,4 +20,4 @@ read from the user's own HX Edit installation at run time and are never copied
 into this repository or into a release.
 
 See docs/legal.md for the full statement, including the provenance of
-hlxgen/data/helix_model_information.json.
+helixgen/data/helix_model_information.json.

@@ -5,7 +5,7 @@ body:
   - type: markdown
     attributes:
       value: >
-        HelixPy has only been verified on an HX Stomp. Reports from any other
+        HelixGen has only been verified on an HX Stomp. Reports from any other
         device are genuinely useful, including ones that simply say it worked.
 
   - type: input
@@ -27,7 +27,7 @@ body:
     id: hx-edit
     attributes:
       label: HX Edit version
-      description: HelixPy reads Helix.sym out of it, and that file changes between releases.
+      description: HelixGen reads Helix.sym out of it, and that file changes between releases.
     validations:
       required: true
 
@@ -46,4 +46,4 @@ body:
     attributes:
       label: Before you go on
       options:
-        - label: I had a backup of the affected slots (`hlxgen backup`)
+        - label: I had a backup of the affected slots (`helixgen backup`)

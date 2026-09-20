@@ -1,8 +1,8 @@
 import copy
 
-from hlxgen.dataset import ModelCatalog
-from hlxgen.generator import generate_preset
-from hlxgen.validator import PresetValidator
+from helixgen.dataset import ModelCatalog
+from helixgen.generator import generate_preset
+from helixgen.validator import PresetValidator
 
 
 def test_validator_detects_invalid_parameter(dataset_path, schema_path, horizon_chain, template_data):

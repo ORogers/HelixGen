@@ -1,6 +1,6 @@
 # Legal
 
-HelixPy is an independent project. This page states what it is, what it is
+HelixGen is an independent project. This page states what it is, what it is
 built from, and what it deliberately does not contain.
 
 ## Trademarks
@@ -10,7 +10,7 @@ Group, Inc. / Line 6, Inc.
 
 This project is **not affiliated with, authorised by, endorsed by or sponsored
 by** Line 6 or Yamaha Guitar Group. Those names appear here only to identify
-the hardware and software HelixPy interoperates with, which is the only way to
+the hardware and software HelixGen interoperates with, which is the only way to
 say what the project does.
 
 ## How the device support was built
@@ -25,7 +25,7 @@ see §7 of that document for the safety rules this work holds itself to.
 
 ## Line 6 data files: not distributed
 
-HX Edit ships several data files that HelixPy reads. None of them is in this
+HX Edit ships several data files that HelixGen reads. None of them is in this
 repository, none is in a release, and all of them are listed in `.gitignore` so
 they cannot be committed by accident:
 
@@ -35,16 +35,16 @@ they cannot be committed by accident:
 | `amp.models` | Each amp's default cabinet | Optional. Without it an amp keeps a separate cab block. |
 
 They are read at run time, in place, from the HX Edit installation on the
-user's own machine - which is why HelixPy needs HX Edit installed to talk to a
+user's own machine - which is why HelixGen needs HX Edit installed to talk to a
 pedal at all, and why it will never be able to ship without that requirement.
-See [`hlxgen/device/hxedit.py`](../hlxgen/device/hxedit.py) for how it is found.
+See [`helixgen/device/hxedit.py`](../helixgen/device/hxedit.py) for how it is found.
 
-Anything pulled off a pedal (`hlxgen pull`, `hlxgen backup`) is someone's own
+Anything pulled off a pedal (`helixgen pull`, `helixgen backup`) is someone's own
 presets and is likewise gitignored.
 
 ## The model catalog
 
-`hlxgen/data/helix_model_information.json` **is** distributed, and it is the one
+`helixgen/data/helix_model_information.json` **is** distributed, and it is the one
 file in this project where that deserves an explanation.
 
 It is a table of facts about what the hardware can do: each model's display
@@ -71,6 +71,6 @@ beyond the model identifiers already discussed.
 
 ## Warranty
 
-None, as the Apache-2.0 licence states. HelixPy writes to a device you paid
-for. Back up before you write - `hlxgen backup` exists for that - and read the
+None, as the Apache-2.0 licence states. HelixGen writes to a device you paid
+for. Back up before you write - `helixgen backup` exists for that - and read the
 safety notes in the README first.

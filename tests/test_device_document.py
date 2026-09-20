@@ -13,7 +13,7 @@ import struct
 import msgpack
 import pytest
 
-from hlxgen.device.document import (
+from helixgen.device.document import (
     KEY_CONTENT,
     KEY_ENABLED,
     KEY_MODEL_INDEX,

@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-from hlxgen import config, llm
-from hlxgen_ui.main_window import MainWindow
-from hlxgen_ui.settings import Settings
+from helixgen import config, llm
+from helixgen_ui.main_window import MainWindow
+from helixgen_ui.settings import Settings
 
 
 @pytest.fixture(autouse=True)
@@ -70,10 +70,10 @@ def test_a_saved_key_completes_setup(qtbot, monkeypatch):
     stored: list[str | None] = []
     monkeypatch.setattr(llm, "store_openai_api_key", stored.append)
     monkeypatch.setattr(
-        "hlxgen_ui.widgets.setup_page.store_openai_api_key", stored.append
+        "helixgen_ui.widgets.setup_page.store_openai_api_key", stored.append
     )
     monkeypatch.setattr(
-        "hlxgen_ui.workers.verify_openai_api_key", lambda key: None
+        "helixgen_ui.workers.verify_openai_api_key", lambda key: None
     )
 
     window = MainWindow()
@@ -93,7 +93,7 @@ def test_a_rejected_key_is_kept_and_explained(qtbot, monkeypatch):
     """Saved before it is checked, so a key that works but cannot be verified
     right now - no network, say - is not thrown away."""
     monkeypatch.setattr(
-        "hlxgen_ui.workers.verify_openai_api_key",
+        "helixgen_ui.workers.verify_openai_api_key",
         lambda key: (_ for _ in ()).throw(llm.LLMGenerationError("That key was rejected.")),
     )
 

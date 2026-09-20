@@ -16,7 +16,7 @@ def hx_edit_installed(tmp_path_factory, monkeypatch):
     would pass on a developer's Mac and fail on a runner, or the other way
     round. Tests about the missing case override this explicitly.
     """
-    from hlxgen.device import hxedit
+    from helixgen.device import hxedit
 
     bundle = tmp_path_factory.mktemp("hxedit") / "HX Edit.app"
     (bundle / "Contents" / "Resources").mkdir(parents=True)
@@ -34,6 +34,6 @@ def openai_key_available(monkeypatch):
     developer has a .env - and fails on a runner, which is exactly what
     happened. Tests about the missing case override this.
     """
-    from hlxgen import llm
+    from helixgen import llm
 
     monkeypatch.setattr(llm, "openai_api_key", lambda: "sk-test-fixture")

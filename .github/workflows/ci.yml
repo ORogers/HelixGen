@@ -21,10 +21,10 @@ jobs:
     name: tests
     runs-on: ubuntu-latest
     env:
-      # hlxgen_ui's PySide6 tests need a Qt platform plugin; there's no
+      # helixgen_ui's PySide6 tests need a Qt platform plugin; there's no
       # display on this runner, so run headless. Set globally (not just in
       # tests/ui/conftest.py) so it also covers any ad-hoc `python -m
-      # hlxgen_ui` invocation in this job.
+      # helixgen_ui` invocation in this job.
       QT_QPA_PLATFORM: offscreen
     steps:
       - uses: actions/checkout@v4
@@ -37,7 +37,7 @@ jobs:
 
       # PySide6 (Qt) needs a handful of shared libraries this base image
       # doesn't ship, even to run headless; pyusb needs libusb's runtime.
-      # Neither is needed by the plain hlxgen CLI itself.
+      # Neither is needed by the plain helixgen CLI itself.
       - name: Install system libraries for PySide6 and pyusb
         run: |
           sudo apt-get update
@@ -65,7 +65,7 @@ jobs:
           cache-dependency-path: pyproject.toml
 
       # Installs the built package rather than the checkout, so the round trip
-      # below exercises exactly what a user gets from `pip install helixpy`.
+      # below exercises exactly what a user gets from `pip install helixgen`.
       - name: Install the package
         run: |
           python -m pip install --upgrade pip
@@ -78,10 +78,10 @@ jobs:
       - name: Generate and validate from outside the checkout
         working-directory: ${{ runner.temp }}
         run: |
-          hlxgen --help > /dev/null
-          hlxgen models --category Reverb | head -3
+          helixgen --help > /dev/null
+          helixgen models --category Reverb | head -3
 
-      # Guards the acceptance criteria in docs/hlxgen_functional_requirements.md:
+      # Guards the acceptance criteria in docs/helixgen_functional_requirements.md:
       # every bundled chain must generate a preset that passes validation.
       - name: Generate and validate every example chain
         run: |
@@ -89,13 +89,13 @@ jobs:
           for chain in docs/examples/*.json; do
             preset="ci-out/$(basename "${chain%.json}").hlx"
             echo "::group::$chain"
-            hlxgen generate "$chain" --output "$preset"
-            hlxgen validate "$preset"
+            helixgen generate "$chain" --output "$preset"
+            helixgen validate "$preset"
             echo "::endgroup::"
           done
 
       - name: Exercise read-only commands
-        run: hlxgen inspect ci-out/basic_chain.hlx
+        run: helixgen inspect ci-out/basic_chain.hlx
 
   lint:
     name: lint
@@ -112,7 +112,7 @@ jobs:
       - run: python -m pip install ruff==0.16.7
 
       - name: Ruff
-        run: python -m ruff check hlxgen/ hlxgen_ui/ tests/
+        run: python -m ruff check helixgen/ helixgen_ui/ tests/
 
   build:
     name: build
@@ -137,11 +137,11 @@ jobs:
           wheel = next(pathlib.Path("dist").glob("*.whl"))
           names = set(zipfile.ZipFile(wheel).namelist())
           required = {
-              "hlxgen/data/helix_model_information.json",
-              "hlxgen/data/helix-preset.schema.json",
-              "hlxgen/data/HXTemplate.hlx",
-              "hlxgen/data/import_helix_preset.applescript",
-              "hlxgen_ui/style.qss",
+              "helixgen/data/helix_model_information.json",
+              "helixgen/data/helix-preset.schema.json",
+              "helixgen/data/HXTemplate.hlx",
+              "helixgen/data/import_helix_preset.applescript",
+              "helixgen_ui/style.qss",
           }
           missing = sorted(required - names)
           if missing:

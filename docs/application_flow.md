@@ -1,23 +1,23 @@
-# How HelixPy currently works
+# How HelixGen currently works
 
-A trace of every path an invocation can take, from `hlxgen` on the command line or
+A trace of every path an invocation can take, from `helixgen` on the command line or
 a click in the desktop app, to a written `.hlx` file and a slot on the pedal.
 
-Two front ends share one engine. `hlxgen` is a single-process CLI: every invocation
+Two front ends share one engine. `helixgen` is a single-process CLI: every invocation
 loads its data files, does one job, prints to stdout/stderr, and exits. The desktop
-app (`hlxgen_ui`) is long-lived, runs its blocking work on Qt threads, and caches
+app (`helixgen_ui`) is long-lived, runs its blocking work on Qt threads, and caches
 what a slot read would otherwise pay for twice — but it calls the same functions,
 never the CLI, and never a subprocess.
 
-There is one persistent piece of state in either: `hlxgen/config.py`, a small JSON
+There is one persistent piece of state in either: `helixgen/config.py`, a small JSON
 file holding what a person set once and should not have to set again - where HX Edit
 was found, the desktop app's settings, and the OpenAI key. Everything else is an
 argument or a file path.
 
 ## Data inputs
 
-The first three ship inside the package (`hlxgen/data/`) and are resolved through
-`hlxgen.resources`, so they are found wherever hlxgen is installed rather than
+The first three ship inside the package (`helixgen/data/`) and are resolved through
+`helixgen.resources`, so they are found wherever helixgen is installed rather than
 relative to the working directory. The last two are Line 6's, are **not**
 distributed, and are read from the user's own HX Edit install — see
 [legal.md](legal.md).
@@ -27,27 +27,27 @@ distributed, and are read from the user's own HX Edit install — see
 | `helix_model_information.json` | `ModelCatalog` | Which models exist, their internal names, categories, and every parameter's type, range, default and option map. Nothing else may name a model. **An option map is keyed by the number the device stores**, not by the option's position in HX Edit's display list - several lists do not start at zero. |
 | `HXTemplate.hlx` | `load_json_file` | The structural skeleton every generated preset is deep-copied from: `meta`, `tone.global`, `dsp0`, `dsp1`, `snapshot0–2`, `variax`, and the HX Stomp device IDs. |
 | `helix-preset.schema.json` | `PresetValidator` | The structural contract checked before any file is written — required `meta` keys, `tone.global.@tempo`, and `dsp0.inputA` / `outputA`. |
-| `Helix.sym` (in HX Edit) | `DeviceSymbols` | The array position of each model *is* its identity on the wire, and each variant's parameter order. Required by every device operation; located by `hlxgen/device/hxedit.py`. |
+| `Helix.sym` (in HX Edit) | `DeviceSymbols` | The array position of each model *is* its identity on the wire, and each variant's parameter order. Required by every device operation; located by `helixgen/device/hxedit.py`. |
 | `amp.models` (in HX Edit) | `AmpDefaults` | Which cab each amp carries in its own slot. Optional — without it an amp keeps a separate cab block. |
 
 ## 1. Entry and dispatch
 
-`hlxgen/__main__.py` imports `hlxgen.main`, which forwards to `cli.main()`; an
-installed copy reaches the same place through the `hlxgen` console script.
+`helixgen/__main__.py` imports `helixgen.main`, which forwards to `cli.main()`; an
+installed copy reaches the same place through the `helixgen` console script.
 `build_parser()` builds one `argparse` parser with a required subcommand, then
 `main()` dispatches on `args.command` (`cli.py:main`) across **eleven** commands.
 `generate` and `describe` differ only in how they obtain a chain dictionary; from
 there they share one code path.
 
 The four device commands — `devices`, `pull`, `backup`, `push` — are dispatched
-through a function-local import of `hlxgen.device.commands`, which is what keeps
+through a function-local import of `helixgen.device.commands`, which is what keeps
 pyusb an optional dependency: the plain CLI never imports it. `--hx-edit`, if
 given, is validated and applied to the environment before any command runs, so no
 handler has to carry a path for the one run where HX Edit is somewhere unusual.
 
 ```mermaid
 flowchart TD
-    entry["python -m hlxgen &lt;args&gt;"] --> parse["cli.main()<br>build_parser() → parse_args(argv)"]
+    entry["python -m helixgen &lt;args&gt;"] --> parse["cli.main()<br>build_parser() → parse_args(argv)"]
     parse --> disp{{"dispatch on args.command"}}
 
     disp --> models["models"]
@@ -79,13 +79,13 @@ flowchart TD
     tr -- "applescript" --> osa["subprocess → osascript<br>drives HX Edit's UI (macOS only)"] --> ok
     up -- no --> ok
 
-    devcmds --> dev1["hlxgen.device.usb Session<br>read, back up or write slots"] --> devx(["exit 0 / 1"])
+    devcmds --> dev1["helixgen.device.usb Session<br>read, back up or write slots"] --> devx(["exit 0 / 1"])
     audit --> a1["DeviceSymbols ⋈ ModelCatalog<br>reconciliation report"] --> ax(["exit 0"])
 ```
 
 Output paths: `generate` writes `<chain>.hlx` beside the chain file, `describe`
 writes to `resources.default_output_dir()` — `./generated-presets/` from a shell,
-`~/Documents/HelixPy/presets/` inside a frozen app bundle, which has no meaningful
+`~/Documents/HelixGen/presets/` inside a frozen app bundle, which has no meaningful
 working directory. Either is overridden by `--output`.
 
 ## 2. Getting a chain dictionary
@@ -96,14 +96,14 @@ A "chain" is a plain dict with an ordered `blocks` list plus optional `meta`,
 suffix is rejected before the file is opened.
 
 `describe` synthesises one instead, and this is where the tool spends nearly all of
-its wall-clock time. The desktop UI (`hlxgen_ui.generation.generate_tone`) takes the
+its wall-clock time. The desktop UI (`helixgen_ui.generation.generate_tone`) takes the
 same path. It makes **two model calls** however long the chain is: one to pick the
 blocks, then one to set every block's parameters. Both go through the same
 `call_llm` closure, so the backend, model and thinking level apply to both rounds.
 
 ```mermaid
 flowchart TD
-    start["hlxgen describe '&lt;tone request&gt;' --llm-backend …"] --> pick{{"_build_llm_caller(backend)"}}
+    start["helixgen describe '&lt;tone request&gt;' --llm-backend …"] --> pick{{"_build_llm_caller(backend)"}}
     pick -- "'openai' (default)" --> oa["client.responses.create(model, input,<br>reasoning.effort, strict json_schema)<br>key: environment → .env → config file"]
     pick -- "'ollama'" --> ol["POST /api/generate · stream=false<br>format = response schema (not for gpt-oss)<br>think = level · options.num_ctx · keep_alive 30m"]
 
@@ -181,12 +181,12 @@ device is attached and falls back to the AppleScript uploader otherwise.
 
 ### 5a. USB — the real path
 
-`hlxgen push`, `generate/describe --upload-via usb`, and the desktop app's Upload
-button all converge on `hlxgen.device.editor.apply_tone`. It is the only transport
+`helixgen push`, `generate/describe --upload-via usb`, and the desktop app's Upload
+button all converge on `helixgen.device.editor.apply_tone`. It is the only transport
 that can change a block's **model**, which is exactly what a freshly generated preset
 does to whatever was in the slot.
 
-Underneath it, `hlxgen/device/usb.py` opens **interface 0 only** — the audio and MIDI
+Underneath it, `helixgen/device/usb.py` opens **interface 0 only** — the audio and MIDI
 interfaces are left alone — and runs one strictly synchronous request/response
 channel. Three properties of the device shape that layer:
 
@@ -224,8 +224,8 @@ snapshot's per-block on/off states are looked up through `placed` — a switch o
 snapshot state bound to `dsp0.block2` has to reach whichever device slot that block
 actually occupies, and the two are independent on the wire.
 
-`--archive` writes the slot's current contents out before overwriting it. `hlxgen
-backup` and `hlxgen pull` are the read-only halves of the same transport.
+`--archive` writes the slot's current contents out before overwriting it. `helixgen
+backup` and `helixgen pull` are the read-only halves of the same transport.
 
 **Firmware, flash and DFU are out of scope and are never transmitted.** See
 [`usb_protocol.md`](usb_protocol.md) §7 for the rest of the safety rules.
@@ -251,16 +251,16 @@ returns 1.
 
 ## 6. The desktop app
 
-`hlxgen_ui` is a PySide6 window over the same engine. It deliberately does **not**
-shell out to `hlxgen`, and does not call `cli._generate_from_chain` either — that
+`helixgen_ui` is a PySide6 window over the same engine. It deliberately does **not**
+shell out to `helixgen`, and does not call `cli._generate_from_chain` either — that
 function prints its result and returns an exit code, which a UI would have to scrape.
-`hlxgen_ui/generation.py` calls the same underlying pieces the `describe` command
+`helixgen_ui/generation.py` calls the same underlying pieces the `describe` command
 calls and hands back a typed `GenerationResult`.
 
 ```mermaid
 flowchart TD
     win["MainWindow"] --> panels["SlotPanel · PromptPanel · GenerationPanel<br>PreviewPanel · UploadPanel · SettingsPage · SetupPage"]
-    panels --> workers["hlxgen_ui/workers.py — one QThread per blocking job"]
+    panels --> workers["helixgen_ui/workers.py — one QThread per blocking job"]
 
     workers --> gw["GenerationWorker → generation.generate_tone()<br>the section 2–4 spine, unchanged"]
     workers --> kw["ApiKeyTestWorker → verify_openai_api_key()<br>lists models: the cheapest authenticated call"]
@@ -284,7 +284,7 @@ Three things about it are not obvious from the signatures:
   interpreter teardown Python will happily collect a worker whose only reference was
   a closed window's attribute.
 - **Three of the four costs in a slot read never change between clicks**, so
-  `hlxgen_ui/device.py` caches them: `_SYMBOLS_CACHE` (the symbol table),
+  `helixgen_ui/device.py` caches them: `_SYMBOLS_CACHE` (the symbol table),
   `_CATALOG_CACHE` (the model catalog) and `_LISTING_CACHE` (the bank's name
   listing). Only the document itself comes off the wire each time. `invalidate_caches`
   drops the listing after an upload, because an upload is the one thing that renames
@@ -294,7 +294,7 @@ Three things about it are not obvious from the signatures:
   the Upload button is disabled and says why, and auto-upload declines rather than
   failing inside the worker.
 
-Settings are written to `hlxgen/config.py`'s file on every change, so a choice made
+Settings are written to `helixgen/config.py`'s file on every change, so a choice made
 once survives a restart. Each field is validated on its own type when read back, so
 an outdated config costs the one setting it got wrong rather than resetting
 everything.
@@ -316,8 +316,8 @@ Five subcommands never write anything:
 - `inspect` loads a preset, resolves each `tone.dsp0` block back through the catalog,
   and prints the chain sorted by `@position`. Unresolvable models are shown as-is
   under the type `Unknown` rather than failing. Note that `inspect` declares its own
-  `--dataset` flag, so both `hlxgen inspect p.hlx --dataset X` and
-  `hlxgen --dataset X inspect p.hlx` are valid, and the subcommand's value wins.
+  `--dataset` flag, so both `helixgen inspect p.hlx --dataset X` and
+  `helixgen --dataset X inspect p.hlx` are valid, and the subcommand's value wins.
 - `validate` runs the gate from section 4 on an existing file and can write its
   findings as JSON with `--report`.
 - `llm-models` lists what the chosen backend offers — a fixed tuple for OpenAI, and
@@ -334,9 +334,9 @@ only `--identify` opens a session. `pull` and `backup` read slots without writin
 
 ## Behaviour that isn't visible in the signatures
 
-- **Return codes are discarded under `python -m hlxgen`.** `__main__.py` calls
-  `hlxgen.main()`, which calls `cli.main()` and drops its integer result. Only
-  `python hlxgen/cli.py` wraps it in `SystemExit`. Argparse's own failures still
+- **Return codes are discarded under `python -m helixgen`.** `__main__.py` calls
+  `helixgen.main()`, which calls `cli.main()` and drops its integer result. Only
+  `python helixgen/cli.py` wraps it in `SystemExit`. Argparse's own failures still
   exit 2, because `parser.error()` exits directly.
 - **`ModelCatalogError` and `ValidationError` surface as argparse errors.** `main()`
   catches both and routes them to `parser.error()`, so a missing dataset, a malformed
@@ -365,15 +365,15 @@ only `--identify` opens a session. `pull` and `backup` read slots without writin
   would otherwise be ignored until the next launch.
 - **The API key has three sources, most specific first**: `OPENAI_API_KEY` in the
   environment, a `.env` file found by walking up from the working directory, then
-  `hlxgen/config.py`'s file. The environment winning is what lets a shell override a
+  `helixgen/config.py`'s file. The environment winning is what lets a shell override a
   saved key for one run; the config file is what lets an app launched from the Dock,
   with no environment at all, have a key in the first place. It is stored in plain
   text in a file created `rw-------`.
 - **Cab blocks are never parameterised by the model.** Any model whose category
   contains "cab" keeps its dataset defaults; their controls (and the IR slot lists)
   rarely carry the tone request.
-- **HX Edit is found once and remembered.** `hlxgen/device/hxedit.py` tries an
-  explicit path, `HLXGEN_HX_EDIT`, a path remembered in `hlxgen/config.py`, the two
+- **HX Edit is found once and remembered.** `helixgen/device/hxedit.py` tries an
+  explicit path, `HELIXGEN_HX_EDIT`, a path remembered in `helixgen/config.py`, the two
   standard `/Applications` locations, then Spotlight by bundle id. A remembered path
   is re-validated on every use, so an install that moved falls through to a fresh
   search rather than pinning the app to a dead path, and an install is recognised by

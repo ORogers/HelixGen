@@ -1,4 +1,4 @@
-from hlxgen.inspector import render_table
+from helixgen.inspector import render_table
 
 
 def test_render_table_borders_line_up_with_the_rows_they_frame() -> None:

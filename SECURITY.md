@@ -34,8 +34,8 @@ Out of scope:
 ## Where the API key is kept
 
 An OpenAI key set through the desktop app is written to the config file -
-`~/Library/Application Support/HelixPy/config.json` on macOS,
-`~/.config/helixpy/config.json` elsewhere - which is created `rw-------`.
+`~/Library/Application Support/HelixGen/config.json` on macOS,
+`~/.config/helixgen/config.json` elsewhere - which is created `rw-------`.
 
 **It is stored in plain text.** Anything running as that user can read it, the
 same as the `.env` file the CLI has always read. That is the trade for an app
@@ -48,7 +48,7 @@ message, a crash report, the preset files themselves - are in scope and welcome.
 
 ## Hardware safety
 
-HelixPy writes to real hardware, so a bug here can cost someone their presets.
+HelixGen writes to real hardware, so a bug here can cost someone their presets.
 The project holds itself to the rules in
 [docs/usb_protocol.md](docs/usb_protocol.md) §7, the first of which is
 absolute:

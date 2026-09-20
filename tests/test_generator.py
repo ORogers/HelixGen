@@ -1,7 +1,7 @@
 import copy
 
-from hlxgen.dataset import ModelCatalog
-from hlxgen.generator import generate_preset
+from helixgen.dataset import ModelCatalog
+from helixgen.generator import generate_preset
 
 
 def test_generate_preset_applies_defaults_and_overrides(dataset_path, horizon_chain, template_data):

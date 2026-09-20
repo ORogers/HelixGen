@@ -60,26 +60,26 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install '.[ui]' pyinstaller
 
-      - name: Build HelixPy.app
-        run: pyinstaller packaging/HelixPy.spec --noconfirm
+      - name: Build HelixGen.app
+        run: pyinstaller packaging/HelixGen.spec --noconfirm
 
       # A bundle missing a data file launches perfectly well and then fails the
       # first time someone asks it for anything. This loads them.
       - name: Check the bundle is intact
-        run: dist/HelixPy.app/Contents/MacOS/HelixPy --selftest
+        run: dist/HelixGen.app/Contents/MacOS/HelixGen --selftest
 
       - name: Build the disk image
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          STAGE="$(mktemp -d)/HelixPy"
+          STAGE="$(mktemp -d)/HelixGen"
           mkdir -p "$STAGE"
-          cp -R dist/HelixPy.app "$STAGE/"
+          cp -R dist/HelixGen.app "$STAGE/"
           ln -s /Applications "$STAGE/Applications"
           cp README.md "$STAGE/README.md"
           mkdir -p dmg
-          hdiutil create -volname "HelixPy $VERSION" \
+          hdiutil create -volname "HelixGen $VERSION" \
             -srcfolder "$STAGE" -ov -format UDZO \
-            "dmg/HelixPy-$VERSION.dmg"
+            "dmg/HelixGen-$VERSION.dmg"
 
       # TODO: signing and notarisation. Until then macOS shows an unidentified
       # developer warning, which docs/install.md explains. Adding it needs a
@@ -121,14 +121,14 @@ jobs:
           body: |
             ## Installing
 
-            **The app** - download the `.dmg`, drag HelixPy to Applications,
+            **The app** - download the `.dmg`, drag HelixGen to Applications,
             then **right-click it and choose Open** the first time. It is not
             signed with an Apple Developer ID, so macOS asks; see
             [docs/install.md](https://github.com/ORogers/HelixPy/blob/main/docs/install.md#why-macos-warns-you).
 
-            **The command line** - `pipx install 'helixpy[usb]'`.
+            **The command line** - `pipx install 'helixgen[usb]'`.
 
             `SHA256SUMS` covers the disk image.
 
             > Talking to a pedal needs HX Edit installed, and writing to one
-            > overwrites the slot. Take a backup first: `hlxgen backup --output ~/helix-backup`.
+            > overwrites the slot. Take a backup first: `helixgen backup --output ~/helix-backup`.

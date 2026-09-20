@@ -12,13 +12,13 @@ import struct
 import msgpack
 import pytest
 
-from hlxgen.device.codec import (
+from helixgen.device.codec import (
     CodecError,
     overlay,
     record_index_for,
     tone_blocks,
 )
-from hlxgen.device.document import (
+from helixgen.device.document import (
     KEY_CONTENT,
     KEY_ENABLED,
     KEY_MODEL_INDEX,
@@ -35,7 +35,7 @@ from hlxgen.device.document import (
     _entry_offsets,
     parse,
 )
-from hlxgen.device.symbols import DeviceSymbols
+from helixgen.device.symbols import DeviceSymbols
 
 
 def _symbols() -> DeviceSymbols:

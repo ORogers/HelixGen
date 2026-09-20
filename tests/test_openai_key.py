@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from hlxgen import config, llm
+from helixgen import config, llm
 
 
 @pytest.fixture(autouse=True)
@@ -20,7 +20,7 @@ def _real_lookup(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     this repository has one.
     """
     monkeypatch.undo()
-    monkeypatch.setenv("HLXGEN_CONFIG_DIR", str(tmp_path / "config"))
+    monkeypatch.setenv("HELIXGEN_CONFIG_DIR", str(tmp_path / "config"))
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.chdir(tmp_path)
 

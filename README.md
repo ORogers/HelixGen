@@ -1,22 +1,22 @@
-# HelixPy
+# HelixGen
 
 [![CI](https://github.com/ORogers/HelixPy/actions/workflows/ci.yml/badge.svg)](https://github.com/ORogers/HelixPy/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
 **Describe a guitar tone in plain English. Get it on your Line 6 HX Stomp.**
 
-HelixPy turns "warm, dark jazz tone - hollowbody into a small valve amp, light
+HelixGen turns "warm, dark jazz tone - hollowbody into a small valve amp, light
 compression, a short room reverb" into a real Helix preset, validates it
 against the full model catalog, and writes it straight into a slot on your
 pedal over USB. There is a desktop app and a command-line tool; both do the
 same thing.
 
-![The HelixPy desktop app, showing a generated signal chain](docs/images/app.png)
+![The HelixGen desktop app, showing a generated signal chain](docs/images/app.png)
 
 > **This writes to your pedal.** Take a backup before the first write -
-> `hlxgen backup --output ~/helix-backup` copies every slot and sends the pedal
+> `helixgen backup --output ~/helix-backup` copies every slot and sends the pedal
 > nothing. Firmware, flash and DFU are out of scope and are never transmitted;
-> everything HelixPy does is recoverable.
+> everything HelixGen does is recoverable.
 
 ---
 
@@ -44,7 +44,7 @@ same thing.
 - **Browse your pedal** from the app: what each slot holds, and the signal
   chain of any of them, read without loading the preset or moving the pedal's
   own panel.
-- **Backups.** `hlxgen backup` copies all 126 slots and sends the pedal
+- **Backups.** `helixgen backup` copies all 126 slots and sends the pedal
   nothing; `push --archive` saves the target slot before it is overwritten.
 - **Amps carry their own cab**, the way they do on the pedal, so a chain with
   an amp and six effects still fits in eight blocks. `--separate-cabs` if you
@@ -59,19 +59,19 @@ same thing.
   routing field.
 - **Validation before anything is written**, structurally against a JSON schema
   and semantically against the catalog - every model real, every value in
-  range. The same gate backs a standalone `hlxgen validate`.
+  range. The same gate backs a standalone `helixgen validate`.
 - **Snapshots that work on arrival.** A generated preset carries the pedal's
   three snapshots with every block switched on in each, so they are usable the
   moment it lands rather than empty. On upload the per-block states are
   remapped to the slots the blocks actually ended up in and written separately,
   because the device's edit operations do not carry them. All three snapshots
-  start identical - HelixPy does not yet write *different* ones, such as a lead
+  start identical - HelixGen does not yet write *different* ones, such as a lead
   variant with more gain.
 - **Presets that import cleanly**, built from a known-good HX Stomp export so
   global parameters, routing and device identifiers match what HX Edit
   expects.
-- **`hlxgen inspect`** to read any `.hlx` file as an ordered signal chain, and
-  `hlxgen models` to list the catalog, filtered by category.
+- **`helixgen inspect`** to read any `.hlx` file as an ordered signal chain, and
+  `helixgen models` to list the catalog, filtered by category.
 
 **Both ways in**
 
@@ -83,7 +83,7 @@ same thing.
 
 ## Install
 
-**The app** - download the `.dmg` from [Releases][releases], drag HelixPy to
+**The app** - download the `.dmg` from [Releases][releases], drag HelixGen to
 Applications, then **right-click it and choose Open** the first time.
 ([Why?](docs/install.md#why-macos-warns-you))
 
@@ -92,7 +92,7 @@ Applications, then **right-click it and choose Open** the first time.
 **The command line**
 
 ```bash
-pipx install 'helixpy[usb]'   # plus: brew install libusb
+pipx install 'helixgen[usb]'   # plus: brew install libusb
 ```
 
 You will also need **HX Edit** installed to reach the pedal, and an
@@ -103,9 +103,9 @@ locally. [Full setup →](docs/guide.md#1-what-you-need)
 ## Try it
 
 ```bash
-hlxgen backup --output ~/helix-backup          # once, before anything else
-hlxgen describe "spacious ambient clean, long decay"
-hlxgen describe "tight prog metal rhythm" --upload --upload-via usb --slot 4
+helixgen backup --output ~/helix-backup          # once, before anything else
+helixgen describe "spacious ambient clean, long decay"
+helixgen describe "tight prog metal rhythm" --upload --upload-via usb --slot 4
 ```
 
 Or open the app, pick a slot, type what you want, press Generate.

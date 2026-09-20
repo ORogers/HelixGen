@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from hlxgen.device.frames import (
+from helixgen.device.frames import (
     CMD_CHUNK,
     CMD_DATA,
     CMD_IDLE,
@@ -17,7 +17,7 @@ from hlxgen.device.frames import (
     Frame,
     encode_command,
 )
-from hlxgen.device.writer import (
+from helixgen.device.writer import (
     CREDIT_UNIT,
     FIRST_FRAME_BODY,
     SLOW_CREDIT_MS,
@@ -217,7 +217,7 @@ class TestGuards:
 
     def test_the_writer_never_sends_a_save(self):
         """Committing is the session's call, not the writer's -- guard 4."""
-        from hlxgen.device.writer import OP_SAVE_PRESET
+        from helixgen.device.writer import OP_SAVE_PRESET
 
         session = FakeSession([_credit()] * 8)
         DocumentWriter(session).write_document(b"\x00" * CREDIT_UNIT, slot=0)

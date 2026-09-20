@@ -1,11 +1,11 @@
 # The USB protocol
 
-How HelixPy talks to an HX device: the transport, the preset document format, the
+How HelixGen talks to an HX device: the transport, the preset document format, the
 name-to-ordinal mapping, and how a preset is written. It is a reference for working
-on `hlxgen/device/`, not a tutorial.
+on `helixgen/device/`, not a tutorial.
 
 Everything here was measured against a real HX Stomp (fw 3.x) rather than inferred,
-and the code it describes is verified end to end: `hlxgen push tone.hlx --slot N`
+and the code it describes is verified end to end: `helixgen push tone.hlx --slot N`
 lands a generated preset that survives a power cycle.
 
 **Scope.** macOS only. Windows and Linux are unbuilt, which keeps the
@@ -20,7 +20,7 @@ interface carrying a request/response protocol whose payloads are MessagePack.
 
 ## 1. Transport
 
-`hlxgen/device/usb.py`, `hlxgen/device/frames.py`
+`helixgen/device/usb.py`, `helixgen/device/frames.py`
 
 | Property | Value |
 |---|---|
@@ -119,14 +119,14 @@ An empty answer `{102: txn, 103: 0, 104: nil}` from `op 4` means **flash holds n
 document for that slot**. That is distinct from a stored preset whose content is
 default, and from a desynced read. Selecting an unpopulated slot makes the firmware
 *synthesize* a preset, so a backup that recovers empty slots by selecting them writes
-synthesized documents back on restore. `hlxgen backup` leaves unpopulated slots out,
+synthesized documents back on restore. `helixgen backup` leaves unpopulated slots out,
 as HX Edit does.
 
 ---
 
 ## 2. The preset document
 
-`hlxgen/device/document.py`
+`helixgen/device/document.py`
 
 A document is three MessagePack values, back to back:
 
@@ -169,12 +169,12 @@ one-element list wrapping a map whose `11` sub-map holds:
 **The switch and the block it drives are independent.** The switch is the entry's
 *position* in the array; the block is key `8` inside it. They coincide only when
 switches happen to be assigned in chain order, which real presets often are not -
-HelixPy's own generator assigns drive, modulation and delay first, so a six-block
+HelixGen's own generator assigns drive, modulation and delay first, so a six-block
 tone can land as FS1→chorus, FS2→delay, FS3→compressor.
 
 Of 336 footswitch entries read off a pedal, 330 share one shape. The six that differ
 carry an extra sub-map at `11 → 9` because they assign a *parameter* rather than a
-block's bypass, which HelixPy does not write. A document whose layout is empty - one
+block's bypass, which HelixGen does not write. A document whose layout is empty - one
 rebuilt by writes - has no entry to clone, so that measured shape stands in.
 
 ### Snapshots
@@ -198,7 +198,7 @@ an **empty preset**.
 
 ## 3. Names to ordinals
 
-`hlxgen/device/symbols.py`, `hlxgen/device/resolve.py`
+`helixgen/device/symbols.py`, `helixgen/device/resolve.py`
 
 The device addresses models and parameters by **ordinal**; the catalog names them.
 The bridge is `Helix.sym`, which ships inside HX Edit as a JSON array of
@@ -213,7 +213,7 @@ usual culprits, sitting mid-vector and shifting every ordinal after them. Gettin
 variant wrong mislabels every parameter past the divergence point.
 
 **`Helix.sym` is Line 6's and is not distributed.** It is read from the user's own HX
-Edit install; see [legal.md](legal.md) and `hlxgen/device/hxedit.py` for how it is
+Edit install; see [legal.md](legal.md) and `helixgen/device/hxedit.py` for how it is
 found. Against a real table: 833 device symbols, 343 catalog models, **343 resolved,
 0 unresolved**.
 
@@ -273,7 +273,7 @@ it shifts no ordinal. The `+1` group is reverbs, delays and FX loops.
 
 ## 4. Writing a preset
 
-`hlxgen/device/editor.py`, `hlxgen/device/writer.py`, `hlxgen/device/codec.py`
+`helixgen/device/editor.py`, `helixgen/device/writer.py`, `helixgen/device/codec.py`
 
 ### The donor
 
@@ -281,7 +281,7 @@ A device preset document is not fully understood: preset key `5` alone holds 86
 fields, most undecoded, and the input/output nodes store a "ragged prefix" of the
 model's parameter list whose rule nobody has pinned down.
 
-So HelixPy does not synthesise a document. It reads one **the device itself wrote**
+So HelixGen does not synthesise a document. It reads one **the device itself wrote**
 from the target slot (`op 4`) and overlays only the fields the `.hlx` determines,
 keeping the device's own bytes everywhere else. That base is the **donor**, and it
 must come from the target device or at least the same model. Whatever the tone could
@@ -292,7 +292,7 @@ This is the same pattern `generate_preset()` uses one level up, deep-copying
 
 ### Why surgical edits, not a whole-document write
 
-Three paths can populate the edit buffer. HelixPy uses **A**:
+Three paths can populate the edit buffer. HelixGen uses **A**:
 
 - **A — surgical edit commands.** `op 20` select → read → per block `op 40` swap,
   `op 30` per value, `op 41` bypass → `op 28` for donor slots the tone does not fill
@@ -502,7 +502,7 @@ documented shape, so the suite needs no proprietary data and no hardware.
 - **Back up before any write**, and archive the target slot before overwriting it.
 - **Do not commit Line 6 data.** `Helix.sym` and its siblings are gitignored and are
   read in place from the user's own HX Edit install. The one distributed file is
-  `hlxgen/data/helix_model_information.json`, the model catalog: names, ranges,
+  `helixgen/data/helix_model_information.json`, the model catalog: names, ranges,
   defaults and option labels, no code and no algorithms, without which a preset
   cannot be addressed at all. That it ships is a deliberate decision, set out in
   [legal.md](legal.md).

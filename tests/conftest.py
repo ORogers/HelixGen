@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from hlxgen import resources
+from helixgen import resources
 
 
 @pytest.fixture(autouse=True)
@@ -15,7 +15,7 @@ def _isolated_config(tmp_path_factory, monkeypatch: pytest.MonkeyPatch) -> None:
     it would overwrite someone's settings.
     """
     monkeypatch.setenv(
-        "HLXGEN_CONFIG_DIR", str(tmp_path_factory.mktemp("config"))
+        "HELIXGEN_CONFIG_DIR", str(tmp_path_factory.mktemp("config"))
     )
 
 
@@ -23,7 +23,7 @@ def _isolated_config(tmp_path_factory, monkeypatch: pytest.MonkeyPatch) -> None:
 def _no_ollama_capability_probe(monkeypatch: pytest.MonkeyPatch) -> None:
     """Keep tests off the network: the thinking-capability probe would otherwise
     ask a real Ollama server. Decide from the model name instead."""
-    from hlxgen import llm
+    from helixgen import llm
 
     monkeypatch.setattr(
         llm,
@@ -34,9 +34,9 @@ def _no_ollama_capability_probe(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture(scope="session")
 def dataset_path() -> Path:
-    """The real model catalog, from wherever hlxgen is installed.
+    """The real model catalog, from wherever helixgen is installed.
 
-    Resolved through ``hlxgen.resources`` rather than the repo root, so the
+    Resolved through ``helixgen.resources`` rather than the repo root, so the
     suite passes against an installed wheel exactly as it does in a clone.
     """
     return resources.dataset_path()
@@ -118,7 +118,7 @@ def _no_live_llm_calls(monkeypatch: pytest.MonkeyPatch) -> None:
     something the suite should be able to notice.
     """
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    monkeypatch.setattr("hlxgen.llm.openai_api_key", lambda: None)
+    monkeypatch.setattr("helixgen.llm.openai_api_key", lambda: None)
 
     def _refuse(*_args: object, **_kwargs: object) -> None:
         raise AssertionError(
@@ -126,5 +126,5 @@ def _no_live_llm_calls(monkeypatch: pytest.MonkeyPatch) -> None:
             "--llm-backend ollama if the test is about the Ollama path."
         )
 
-    monkeypatch.setattr("hlxgen.llm._get_openai_client", _refuse)
-    monkeypatch.setattr("hlxgen.llm.verify_openai_api_key", _refuse)
+    monkeypatch.setattr("helixgen.llm._get_openai_client", _refuse)
+    monkeypatch.setattr("helixgen.llm.verify_openai_api_key", _refuse)

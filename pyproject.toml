@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "helixpy"
+name = "helixgen"
 version = "0.1.0"
 description = "Describe a guitar tone in plain English and put it on a Line 6 HX Stomp."
 readme = "README.md"
@@ -24,7 +24,7 @@ classifiers = [
 
 # The plain CLI generates, validates and inspects presets, and that is all it
 # needs. Talking to the pedal and running the desktop app are opt-in extras, so
-# `pip install helixpy` does not drag in Qt for someone who only wants `hlxgen`.
+# `pip install helixgen` does not drag in Qt for someone who only wants `helixgen`.
 dependencies = [
     "pyyaml>=6.0",
     "openai>=3.15",
@@ -39,10 +39,10 @@ usb = [
 ]
 ui = [
     "PySide6>=6.6",
-    "helixpy[usb]",
+    "helixgen[usb]",
 ]
 dev = [
-    "helixpy[ui]",
+    "helixgen[ui]",
     "pytest>=7.4",
     "pytest-qt>=4.4",
     # Pinned to match the rule set in ruff.toml, exactly as CI pins it; bump the
@@ -55,18 +55,21 @@ Homepage = "https://github.com/ORogers/HelixPy"
 Issues = "https://github.com/ORogers/HelixPy/issues"
 
 [project.scripts]
-hlxgen = "hlxgen.cli:main"
+helixgen = "helixgen.cli:main"
 
+# A distinct name: `helixgen` is the command-line tool, and two entry points
+# cannot share one. The desktop app is normally launched from the .app bundle
+# rather than this script.
 [project.gui-scripts]
-helixpy = "hlxgen_ui.__main__:main"
+helixgen-ui = "helixgen_ui.__main__:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["hlxgen", "hlxgen_ui"]
+packages = ["helixgen", "helixgen_ui"]
 
 [tool.hatch.build.targets.sdist]
 include = [
-    "/hlxgen",
-    "/hlxgen_ui",
+    "/helixgen",
+    "/helixgen_ui",
     "/tests",
     "/docs",
     "/pyproject.toml",

@@ -24,8 +24,8 @@ body:
   - type: input
     id: version
     attributes:
-      label: HelixPy version
-      description: "`hlxgen --version`, or the commit you are on."
+      label: HelixGen version
+      description: "`helixgen --version`, or the commit you are on."
     validations:
       required: true
 

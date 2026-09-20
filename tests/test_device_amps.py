@@ -11,9 +11,9 @@ import json
 
 import pytest
 
-from hlxgen.device.amps import AmpDataError, AmpDefaults
-from hlxgen.device.editor import plan_chain
-from hlxgen.device.symbols import DeviceSymbols
+from helixgen.device.amps import AmpDataError, AmpDefaults
+from helixgen.device.editor import plan_chain
+from helixgen.device.symbols import DeviceSymbols
 
 AMP_MODELS = json.dumps(
     [

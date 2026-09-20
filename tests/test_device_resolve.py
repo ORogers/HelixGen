@@ -2,14 +2,14 @@ import json
 
 import pytest
 
-from hlxgen.dataset import ModelCatalog
-from hlxgen.device.resolve import (
+from helixgen.dataset import ModelCatalog
+from helixgen.device.resolve import (
     ResolutionError,
     audit_catalog,
     host_parameter_names,
     resolve_model,
 )
-from hlxgen.device.symbols import DeviceSymbols
+from helixgen.device.symbols import DeviceSymbols
 
 # A miniature catalog in the shape of helix_model_information.json, paired with a
 # symbol table that exercises the three cases that matter: an unsuffixed model, one

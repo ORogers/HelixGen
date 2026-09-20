@@ -10,7 +10,7 @@ Python 3.13 or newer.
 
 ```bash
 git clone https://github.com/ORogers/HelixPy.git
-cd HelixPy
+cd HelixGen
 python3 -m venv .venv && source .venv/bin/activate
 python3 -m pip install -e '.[dev]'
 ```
@@ -29,7 +29,7 @@ To run anything against a pedal you also need HX Edit installed - it carries
 
 ```bash
 python3 -m pytest -q
-python3 -m ruff check hlxgen/ hlxgen_ui/ tests/
+python3 -m ruff check helixgen/ helixgen_ui/ tests/
 ```
 
 Both run in CI on every pull request, along with a round trip that generates
@@ -61,7 +61,7 @@ own.
 ## Style
 
 Match the code around you. This codebase leans on comments and docstrings that
-explain *why* a thing is the way it is - particularly in `hlxgen/device/`,
+explain *why* a thing is the way it is - particularly in `helixgen/device/`,
 where the answer is usually "because the hardware does something surprising".
 A comment that records what the device actually did is worth more than one that
 restates the code.

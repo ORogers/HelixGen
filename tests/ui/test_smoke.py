@@ -1,4 +1,4 @@
-"""Light pytest-qt smoke tests for the hlxgen_ui main window.
+"""Light pytest-qt smoke tests for the helixgen_ui main window.
 
 These check construction and signal wiring, not full generation/upload flows
 end to end (that needs a live LLM backend and, for upload, a real pedal).
@@ -17,16 +17,16 @@ import pytest
 
 pytest.importorskip("pytestqt")
 
-from hlxgen_ui.device import DeviceSummary, SlotSummary
-from hlxgen_ui.main_window import MainWindow
-from hlxgen_ui.widgets.upload_panel import TRANSPORT_USB
+from helixgen_ui.device import DeviceSummary, SlotSummary
+from helixgen_ui.main_window import MainWindow
+from helixgen_ui.widgets.upload_panel import TRANSPORT_USB
 
 
 @pytest.fixture
 def isolated_cwd(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Run in an empty working directory.
 
-    The catalog, template and schema now travel inside ``hlxgen.data`` and are
+    The catalog, template and schema now travel inside ``helixgen.data`` and are
     found wherever the app runs from, so nothing has to be copied here. What
     still matters is the working directory: a generated preset lands in
     ``./generated-presets`` and would otherwise pollute the repo root.
@@ -38,18 +38,18 @@ def isolated_cwd(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 @pytest.fixture(autouse=True)
 def no_real_device(monkeypatch: pytest.MonkeyPatch):
     """Never let a test touch the real USB device, even by accident."""
-    monkeypatch.setattr("hlxgen_ui.workers.find_device", lambda: None)
+    monkeypatch.setattr("helixgen_ui.workers.find_device", lambda: None)
     monkeypatch.setattr(
-        "hlxgen_ui.workers.read_slots",
+        "helixgen_ui.workers.read_slots",
         lambda count, bank=0, on_progress=None: [],
     )
 
     def _no_chain(slot, *, bank=0, dataset):
-        from hlxgen_ui.device import DeviceUnavailable
+        from helixgen_ui.device import DeviceUnavailable
 
         raise DeviceUnavailable("no device in tests")
 
-    monkeypatch.setattr("hlxgen_ui.workers.read_slot_chain", _no_chain)
+    monkeypatch.setattr("helixgen_ui.workers.read_slot_chain", _no_chain)
 
 
 #: What the stubbed Ollama server reports: installed models and their thinking levels.
@@ -64,10 +64,10 @@ FAKE_OLLAMA_MODELS = {
 def no_real_ollama(monkeypatch: pytest.MonkeyPatch):
     """Opening Settings lists the installed models; never ask a real server."""
     monkeypatch.setattr(
-        "hlxgen_ui.workers.list_llm_models", lambda backend, endpoint: list(FAKE_OLLAMA_MODELS)
+        "helixgen_ui.workers.list_llm_models", lambda backend, endpoint: list(FAKE_OLLAMA_MODELS)
     )
     monkeypatch.setattr(
-        "hlxgen_ui.workers.supported_reasoning_efforts",
+        "helixgen_ui.workers.supported_reasoning_efforts",
         lambda backend, model, endpoint=None: FAKE_OLLAMA_MODELS[model],
     )
 
@@ -84,14 +84,14 @@ def _stub_llm(
         calls.append({"model": model_name, **options})
         return chain if llm_request.schema_name == "chain" else params
 
-    monkeypatch.setattr("hlxgen.llm._call_ollama", fake_call)
+    monkeypatch.setattr("helixgen.llm._call_ollama", fake_call)
     return calls
 
 
 def test_main_window_constructs_without_a_device(qtbot):
     window = MainWindow()
     qtbot.addWidget(window)
-    assert window.windowTitle() == "HelixPy"
+    assert window.windowTitle() == "HelixGen"
     qtbot.waitUntil(
         lambda: "No pedal found" in window.slot_panel._status_label.text(), timeout=2000
     )
@@ -111,16 +111,16 @@ def test_refresh_reports_a_failed_sweep(qtbot, monkeypatch: pytest.MonkeyPatch):
     """Device present but the sweep fails (busy, unplugged mid-read): the
     reason reaches the panel instead of a silent empty list."""
     monkeypatch.setattr(
-        "hlxgen_ui.workers.find_device",
+        "helixgen_ui.workers.find_device",
         lambda: DeviceSummary(description="HX Stomp (serial 3264140)", verified=True),
     )
 
     def unavailable(count, bank=0, on_progress=None):
-        from hlxgen_ui.device import DeviceUnavailable
+        from helixgen_ui.device import DeviceUnavailable
 
         raise DeviceUnavailable("HX Edit is holding the interface.")
 
-    monkeypatch.setattr("hlxgen_ui.workers.read_slots", unavailable)
+    monkeypatch.setattr("helixgen_ui.workers.read_slots", unavailable)
 
     window = MainWindow()
     qtbot.addWidget(window)
@@ -132,11 +132,11 @@ def test_refresh_reports_a_failed_sweep(qtbot, monkeypatch: pytest.MonkeyPatch):
 
 def test_refresh_lists_slots_and_names_them(qtbot, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(
-        "hlxgen_ui.workers.find_device",
+        "helixgen_ui.workers.find_device",
         lambda: DeviceSummary(description="HX Stomp (serial 3264140)", verified=True),
     )
     monkeypatch.setattr(
-        "hlxgen_ui.workers.read_slots",
+        "helixgen_ui.workers.read_slots",
         lambda count, bank=0, on_progress=None: [
             SlotSummary(index=0, populated=True, name="Warm Blues", detail="5 blocks"),
             SlotSummary(index=1, populated=False),
@@ -180,7 +180,7 @@ def test_usb_upload_sends_the_selected_slot(qtbot, isolated_cwd, monkeypatch):
         seen["name"] = preset.get("data", {}).get("meta", {}).get("name")
         return "1 block swapped\ncommitted"
 
-    monkeypatch.setattr("hlxgen_ui.workers.push_preset", fake_push)
+    monkeypatch.setattr("helixgen_ui.workers.push_preset", fake_push)
 
     window = MainWindow()
     qtbot.addWidget(window)
@@ -213,7 +213,7 @@ def test_generate_flow_reports_llm_failure(
     qtbot, isolated_cwd: Path, monkeypatch: pytest.MonkeyPatch
 ):
     monkeypatch.setattr(
-        "hlxgen.llm._call_ollama", lambda endpoint, model_name, llm_request, **_: "not json"
+        "helixgen.llm._call_ollama", lambda endpoint, model_name, llm_request, **_: "not json"
     )
 
     window = MainWindow()
@@ -246,7 +246,7 @@ def test_close_while_a_worker_runs_does_not_tear_down_the_thread(
         release.wait(timeout=5)
         return json.dumps({"title": "Slow Tone", "blocks": ["Horizon Drive"]})
 
-    monkeypatch.setattr("hlxgen.llm._call_ollama", slow_call)
+    monkeypatch.setattr("helixgen.llm._call_ollama", slow_call)
 
     window = MainWindow()
     qtbot.addWidget(window)
@@ -285,7 +285,7 @@ def test_auto_upload_sends_to_the_selected_slot(qtbot, isolated_cwd, monkeypatch
         sent["slot"] = slot
         return "committed"
 
-    monkeypatch.setattr("hlxgen_ui.workers.push_preset", fake_push)
+    monkeypatch.setattr("helixgen_ui.workers.push_preset", fake_push)
 
     window = MainWindow()
     qtbot.addWidget(window)
@@ -305,7 +305,7 @@ def test_auto_upload_never_guesses_a_slot(qtbot, isolated_cwd, monkeypatch):
         calls.append(slot)
         return "committed"
 
-    monkeypatch.setattr("hlxgen_ui.workers.push_preset", fake_push)
+    monkeypatch.setattr("helixgen_ui.workers.push_preset", fake_push)
 
     window = MainWindow()
     qtbot.addWidget(window)
@@ -320,7 +320,7 @@ def test_auto_upload_respects_the_toggle(qtbot, isolated_cwd, monkeypatch):
     _stub_llm(monkeypatch)
     calls: list[int] = []
     monkeypatch.setattr(
-        "hlxgen_ui.workers.push_preset",
+        "helixgen_ui.workers.push_preset",
         lambda preset, *, slot, bank=0, dataset, on_progress=None: calls.append(slot),
     )
 
@@ -451,10 +451,10 @@ def test_settings_button_swaps_pages(qtbot):
 
 def test_selecting_a_slot_shows_its_chain(qtbot, monkeypatch: pytest.MonkeyPatch):
     """Clicking a slot reads it and draws what is in it, left to right."""
-    from hlxgen_ui.device import ChainBlock, SlotChain
+    from helixgen_ui.device import ChainBlock, SlotChain
 
     monkeypatch.setattr(
-        "hlxgen_ui.workers.read_slot_chain",
+        "helixgen_ui.workers.read_slot_chain",
         lambda slot, *, bank=0, dataset: SlotChain(
             slot=slot,
             name="Vox AC30 TS Spac",
@@ -480,10 +480,10 @@ def test_selecting_a_slot_shows_its_chain(qtbot, monkeypatch: pytest.MonkeyPatch
 
 
 def test_an_empty_slot_says_so_rather_than_showing_a_stale_chain(qtbot, monkeypatch):
-    from hlxgen_ui.device import SlotChain
+    from helixgen_ui.device import SlotChain
 
     monkeypatch.setattr(
-        "hlxgen_ui.workers.read_slot_chain",
+        "helixgen_ui.workers.read_slot_chain",
         lambda slot, *, bank=0, dataset: SlotChain(slot=slot, name=None, blocks=[]),
     )
 
@@ -512,13 +512,13 @@ def test_upload_is_refused_and_explained_without_hx_edit(qtbot, isolated_cwd, mo
     write cannot address a model without a local install. This used to fail
     inside the upload worker with whatever exception surfaced first.
     """
-    from hlxgen.device import hxedit
+    from helixgen.device import hxedit
 
     monkeypatch.setattr(hxedit, "find_hx_edit", lambda explicit=None: None)
     _stub_llm(monkeypatch)
     pushed: list[int] = []
     monkeypatch.setattr(
-        "hlxgen_ui.workers.push_preset",
+        "helixgen_ui.workers.push_preset",
         lambda preset, *, slot, bank=0, dataset, on_progress=None: pushed.append(slot),
     )
 

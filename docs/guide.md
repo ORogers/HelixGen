@@ -1,4 +1,4 @@
-# Using HelixPy
+# Using HelixGen
 
 Describe a tone in plain English, look at what came back, and put it on your
 pedal. This guide walks through that, start to finish, and then through the
@@ -13,8 +13,8 @@ Other Helix devices use the same protocol and may well work, but nobody has
 confirmed it - if you try one, please
 [say so](https://github.com/ORogers/HelixPy/issues/new/choose).
 
-**HX Edit**, Line 6's own editor, [free from Line 6][hxedit]. HelixPy reads two
-data files out of it. They are Line 6's to distribute, not ours, so HelixPy
+**HX Edit**, Line 6's own editor, [free from Line 6][hxedit]. HelixGen reads two
+data files out of it. They are Line 6's to distribute, not ours, so HelixGen
 cannot ship them - which is why the app needs HX Edit installed to talk to your
 pedal at all. Generating and inspecting presets works without it.
 
@@ -37,7 +37,7 @@ You only need one, and you can switch at any time under Settings.
 
 Either the app:
 
-1. Download the `.dmg` from [Releases][releases] and drag HelixPy to
+1. Download the `.dmg` from [Releases][releases] and drag HelixGen to
    Applications.
 2. **Right-click it and choose Open** the first time. See
    [install.md](install.md) for why macOS asks.
@@ -47,10 +47,10 @@ Either the app:
 Or the command line:
 
 ```bash
-pipx install helixpy
+pipx install helixgen
 ```
 
-`pipx install 'helixpy[usb]'` adds the USB stack, and needs libusb
+`pipx install 'helixgen[usb]'` adds the USB stack, and needs libusb
 (`brew install libusb`). The `.dmg` carries its own copy.
 
 ### Setting up OpenAI
@@ -67,8 +67,8 @@ The key is saved to a config file in your home directory, readable only by you:
 
 | | |
 | --- | --- |
-| macOS | `~/Library/Application Support/HelixPy/config.json` |
-| Linux | `~/.config/helixpy/config.json` |
+| macOS | `~/Library/Application Support/HelixGen/config.json` |
+| Linux | `~/.config/helixgen/config.json` |
 
 It is stored in plain text, the same as the `.env` file the CLI reads, so
 anything running as you can read it. Delete the `openai_api_key` entry, or
@@ -94,34 +94,34 @@ ollama pull gpt-oss:20b
 
 `gpt-oss:20b` is the default, and the one the prompts were tuned against. It
 wants about 16 GB of RAM. `ollama pull gpt-oss:120b` is better if your machine
-can hold it. `hlxgen llm-models` lists what you have installed and the thinking
+can hold it. `helixgen llm-models` lists what you have installed and the thinking
 levels each one supports.
 
 ---
 
 ## 3. Back up first
 
-HelixPy overwrites the slot you point it at. Before the first write, take a
+HelixGen overwrites the slot you point it at. Before the first write, take a
 copy of everything:
 
 ```bash
-hlxgen backup --output ~/helix-backup
+helixgen backup --output ~/helix-backup
 ```
 
 That sweeps all 126 slots and writes them out. It reads only; nothing is sent
 to the pedal. Do it once and you can experiment freely.
 
-To restore a slot later, `hlxgen push` the file you saved back to it.
+To restore a slot later, `helixgen push` the file you saved back to it.
 
 ---
 
 ## 4. Your first tone
 
-Open the app (or run `helixpy`). The window has three parts: your pedal's slots
+Open the app (or run `helixgen-ui`). The window has three parts: your pedal's slots
 on the left, the tone you are describing down the middle, and upload on the
 right, with the generated chain across the bottom.
 
-![The HelixPy desktop app](images/app.png)
+![The HelixGen desktop app](images/app.png)
 
 1. **Check the device.** The left panel names your pedal if it is plugged in.
    Press **Refresh** to read what is in the first few slots - each one is a
@@ -155,8 +155,8 @@ tone is generated - but still only into a slot you picked.
 ### The same thing from the command line
 
 ```bash
-hlxgen describe "warm dark jazz tone, hollowbody into a small valve amp"
-hlxgen describe "tight prog metal rhythm" --upload --upload-via usb --slot 4
+helixgen describe "warm dark jazz tone, hollowbody into a small valve amp"
+helixgen describe "tight prog metal rhythm" --upload --upload-via usb --slot 4
 ```
 
 Without `--output`, the preset lands in `./generated-presets/`.
@@ -215,14 +215,14 @@ supported one is used automatically.
 
 ## 7. When something goes wrong
 
-**"HX Edit was not found", and Upload is disabled.** HelixPy could not find an
+**"HX Edit was not found", and Upload is disabled.** HelixGen could not find an
 HX Edit install to read `Helix.sym` from. Install it, or point at it under
 **Settings › HX Edit › Locate…** if you keep it somewhere unusual. On the
-command line, `hlxgen --hx-edit /path/to/HX\ Edit.app`, or set
-`HLXGEN_HX_EDIT`.
+command line, `helixgen --hx-edit /path/to/HX\ Edit.app`, or set
+`HELIXGEN_HX_EDIT`.
 
 **No device listed.** Check the USB cable carries data rather than only power,
-and that the pedal is on. `hlxgen devices` says what is visible. If HX Edit
+and that the pedal is on. `helixgen devices` says what is visible. If HX Edit
 itself is open, close it - both want the same interface.
 
 **The pedal's front panel stops responding.** A session was dropped without

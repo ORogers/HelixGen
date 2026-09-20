@@ -15,8 +15,8 @@ import pytest
 
 pytest.importorskip("pytestqt")
 
-from hlxgen_ui.device import ChainBlock
-from hlxgen_ui.widgets.preview_panel import PreviewPanel
+from helixgen_ui.device import ChainBlock
+from helixgen_ui.widgets.preview_panel import PreviewPanel
 
 
 def _blocks(*names: str) -> list[ChainBlock]:

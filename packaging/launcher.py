@@ -1,6 +1,6 @@
 """Entry point for the frozen app.
 
-``hlxgen_ui/__main__.py`` cannot be used directly: PyInstaller runs its entry
+``helixgen_ui/__main__.py`` cannot be used directly: PyInstaller runs its entry
 script as a top-level module, and that file's relative imports
 (``from .main_window import ...``) need a parent package, so freezing it
 straight produced a bundle that built cleanly and then died on launch with
@@ -21,11 +21,11 @@ def selftest() -> int:
     rather than just look for the files. Run by CI against the built app
     before the .dmg is published:
 
-        HelixPy.app/Contents/MacOS/HelixPy --selftest
+        HelixGen.app/Contents/MacOS/HelixGen --selftest
     """
-    from hlxgen import resources
-    from hlxgen.dataset import ModelCatalog
-    from hlxgen.io import load_json_file
+    from helixgen import resources
+    from helixgen.dataset import ModelCatalog
+    from helixgen.io import load_json_file
 
     catalog = ModelCatalog(resources.dataset_path())
     models = len(list(catalog.models()))
@@ -64,7 +64,7 @@ def selftest() -> int:
 def run() -> int:
     if "--selftest" in sys.argv:
         return selftest()
-    from hlxgen_ui.__main__ import main
+    from helixgen_ui.__main__ import main
 
     return main([arg for arg in sys.argv if arg != "--selftest"])
 

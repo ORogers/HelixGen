@@ -11,7 +11,7 @@ from typing import ClassVar
 
 import pytest
 
-from hlxgen.device.editor import (
+from helixgen.device.editor import (
     K_ENABLED,
     K_MODEL_FLAG,
     K_MODEL_INDEX,
@@ -35,7 +35,7 @@ from hlxgen.device.editor import (
     _wire_candidates,
     enum_index,
 )
-from hlxgen.device.usb import DeviceRefusedError
+from helixgen.device.usb import DeviceRefusedError
 
 
 class FakeSession:

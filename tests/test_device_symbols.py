@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from hlxgen.device.symbols import (
+from helixgen.device.symbols import (
     DeviceSymbols,
     SymbolsError,
     normalize_parameter_name,

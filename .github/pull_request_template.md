@@ -9,7 +9,7 @@
      still welcome, it just needs checking before merge. -->
 
 - [ ] `python3 -m pytest -q`
-- [ ] `python3 -m ruff check hlxgen/ hlxgen_ui/ tests/`
+- [ ] `python3 -m ruff check helixgen/ helixgen_ui/ tests/`
 
 ## Checklist
 

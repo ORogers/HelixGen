@@ -1,14 +1,14 @@
-# `hlxgen` reference
+# `helixgen` reference
 
-Every command, and the flags worth knowing. `hlxgen <command> --help` is always
+Every command, and the flags worth knowing. `helixgen <command> --help` is always
 the authority; this page is the map.
 
 Global flags come before the command:
 
 | Flag | Effect |
 | --- | --- |
-| `--dataset PATH` | A different model catalog. Defaults to the one bundled with hlxgen. |
-| `--hx-edit PATH` | Your `HX Edit.app`, when it is somewhere the usual search misses. `HLXGEN_HX_EDIT` does the same thing for every run. |
+| `--dataset PATH` | A different model catalog. Defaults to the one bundled with helixgen. |
+| `--hx-edit PATH` | Your `HX Edit.app`, when it is somewhere the usual search misses. `HELIXGEN_HX_EDIT` does the same thing for every run. |
 | `--version` | Print the installed version. |
 
 ### The OpenAI key
@@ -19,7 +19,7 @@ places, most specific first:
 1. `OPENAI_API_KEY` in the environment.
 2. A `.env` file, in the working directory or any directory above it.
 3. The config file the desktop app writes - `~/Library/Application
-   Support/HelixPy/config.json` on macOS, `~/.config/helixpy/config.json`
+   Support/HelixGen/config.json` on macOS, `~/.config/helixgen/config.json`
    elsewhere.
 
 So a key set up once in the app also works on the command line, and a shell
@@ -33,10 +33,10 @@ all.
 ### `describe` - a tone in plain English
 
 ```bash
-hlxgen describe "spacious worship clean"
-hlxgen describe "tight prog metal rhythm" --reasoning-effort medium
-hlxgen describe "70s funk clean" --llm-backend ollama   # local, free, offline
-hlxgen describe "warm jazz comp" --upload --upload-via usb --slot 4
+helixgen describe "spacious worship clean"
+helixgen describe "tight prog metal rhythm" --reasoning-effort medium
+helixgen describe "70s funk clean" --llm-backend ollama   # local, free, offline
+helixgen describe "warm jazz comp" --upload --upload-via usb --slot 4
 ```
 
 Two model calls - blocks, then every parameter at once - and the result is
@@ -46,7 +46,7 @@ validated before anything is written. Without `--output` it lands in
 | Flag | Default | |
 | --- | --- | --- |
 | `--llm-backend {openai,ollama}` | `openai` | Where the thinking happens. |
-| `--ollama-model` | `gpt-oss:20b` | Any model `hlxgen llm-models` lists. |
+| `--ollama-model` | `gpt-oss:20b` | Any model `helixgen llm-models` lists. |
 | `--ollama-endpoint` | `http://localhost:11434/api/generate` | |
 | `--num-ctx` | `32768` | Raised automatically if a prompt needs more. |
 | `--openai-model` | `gpt-5.6-terra` | Or `gpt-5.6-sol` (flagship), `gpt-5.6-luna` (cheapest). |
@@ -58,7 +58,7 @@ validated before anything is written. Without `--output` it lands in
 ### `generate` - from a chain file
 
 ```bash
-hlxgen generate docs/examples/basic_chain.json --output clean.hlx
+helixgen generate docs/examples/basic_chain.json --output clean.hlx
 ```
 
 Takes a JSON or YAML chain specification. The simple form is a title and an
@@ -97,7 +97,7 @@ block to override, and an explicit assignment always keeps its switch.
 ### `validate`
 
 ```bash
-hlxgen validate clean.hlx --report results.json
+helixgen validate clean.hlx --report results.json
 ```
 
 Structural schema check plus a semantic pass over every block against the
@@ -106,7 +106,7 @@ catalog. Exit 1 if anything fails.
 ### `inspect`
 
 ```bash
-hlxgen inspect clean.hlx
+helixgen inspect clean.hlx
 ```
 
 Prints the signal chain in order: position, model, category, and what it is
@@ -115,7 +115,7 @@ based on.
 ### `models`
 
 ```bash
-hlxgen models --category Reverb
+helixgen models --category Reverb
 ```
 
 The catalog, optionally filtered to one category.
@@ -123,7 +123,7 @@ The catalog, optionally filtered to one category.
 ### `llm-models`
 
 ```bash
-hlxgen llm-models --llm-backend ollama
+helixgen llm-models --llm-backend ollama
 ```
 
 What is installed and which thinking levels each model supports.
@@ -133,13 +133,13 @@ What is installed and which thinking levels each model supports.
 ## The device
 
 All of these need HX Edit installed - see [legal.md](legal.md) for why - and
-`pip install 'helixpy[usb]'`.
+`pip install 'helixgen[usb]'`.
 
 ### `devices`
 
 ```bash
-hlxgen devices
-hlxgen devices --identify
+helixgen devices
+helixgen devices --identify
 ```
 
 What is attached. Plain enumeration sends the pedal nothing; `--identify` opens
@@ -148,7 +148,7 @@ a session on each to confirm it answers.
 ### `backup` - do this first
 
 ```bash
-hlxgen backup --output ~/helix-backup
+helixgen backup --output ~/helix-backup
 ```
 
 Sweeps every slot (`--count` to do fewer, `--bank` for another bank) and writes
@@ -157,7 +157,7 @@ each one out. Read-only.
 ### `pull`
 
 ```bash
-hlxgen pull --slot 4 --output slot4.msgpack
+helixgen pull --slot 4 --output slot4.msgpack
 ```
 
 One slot, as the device holds it.
@@ -165,7 +165,7 @@ One slot, as the device holds it.
 ### `push`
 
 ```bash
-hlxgen push clean.hlx --slot 4 --archive ~/helix-backup/slot4.msgpack
+helixgen push clean.hlx --slot 4 --archive ~/helix-backup/slot4.msgpack
 ```
 
 **Overwrites the slot.** `--slot` is required and is never guessed.
@@ -187,7 +187,7 @@ whichever slot that block ended up occupying.
 ### `device-audit`
 
 ```bash
-hlxgen device-audit --report audit.json
+helixgen device-audit --report audit.json
 ```
 
 Reconciles the bundled catalog against `Helix.sym` from your own HX Edit

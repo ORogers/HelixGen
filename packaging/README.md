@@ -5,8 +5,8 @@
 ```bash
 python3 -m pip install -e '.[ui]' pyinstaller
 brew install libusb
-pyinstaller packaging/HelixPy.spec --noconfirm
-dist/HelixPy.app/Contents/MacOS/HelixPy --selftest
+pyinstaller packaging/HelixGen.spec --noconfirm
+dist/HelixGen.app/Contents/MacOS/HelixGen --selftest
 ```
 
 The self-test loads the catalog, schema and template out of the bundle and
@@ -35,14 +35,14 @@ notarisation go - it is two steps and three secrets, not a redesign.
 
 ### The icon
 
-`packaging/HelixPy.icns`, if present, becomes the app icon; the spec falls back
+`packaging/HelixGen.icns`, if present, becomes the app icon; the spec falls back
 to PyInstaller's default when it is missing. To make one from a 1024x1024 PNG:
 
 ```bash
-mkdir HelixPy.iconset
+mkdir HelixGen.iconset
 for size in 16 32 64 128 256 512; do
-  sips -z $size $size icon.png --out "HelixPy.iconset/icon_${size}x${size}.png"
-  sips -z $((size*2)) $((size*2)) icon.png --out "HelixPy.iconset/icon_${size}x${size}@2x.png"
+  sips -z $size $size icon.png --out "HelixGen.iconset/icon_${size}x${size}.png"
+  sips -z $((size*2)) $((size*2)) icon.png --out "HelixGen.iconset/icon_${size}x${size}@2x.png"
 done
-iconutil -c icns HelixPy.iconset -o packaging/HelixPy.icns
+iconutil -c icns HelixGen.iconset -o packaging/HelixGen.icns
 ```

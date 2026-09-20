@@ -7,14 +7,14 @@ from pathlib import Path
 
 import pytest
 
-from hlxgen import config
-from hlxgen.device import hxedit
+from helixgen import config
+from helixgen.device import hxedit
 
 
 @pytest.fixture(autouse=True)
 def isolated_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Keep every test off the real config file and the real environment."""
-    monkeypatch.setenv("HLXGEN_CONFIG_DIR", str(tmp_path / "config"))
+    monkeypatch.setenv("HELIXGEN_CONFIG_DIR", str(tmp_path / "config"))
     monkeypatch.delenv(hxedit.HX_EDIT_ENV_VAR, raising=False)
     # No test may depend on whether the machine running it has HX Edit.
     monkeypatch.setattr(hxedit, "KNOWN_BUNDLE_PATHS", ())

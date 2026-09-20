@@ -25,7 +25,7 @@ build/
 !HXTemplate.hlx
 generated-presets/
 
-# Device backups pulled off a pedal (hlxgen pull/backup). Someone's presets,
+# Device backups pulled off a pedal (helixgen pull/backup). Someone's presets,
 # and Line 6 data: never committed.
 *.msgpack
 
