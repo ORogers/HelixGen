@@ -36,3 +36,7 @@ HelixModelDefs.bin
 HelixControls.json
 HX_ModelCatalog.json
 *.models
+
+# PyInstaller
+/build/
+*.spec.bak
