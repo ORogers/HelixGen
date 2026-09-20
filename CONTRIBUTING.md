@@ -47,7 +47,7 @@ gitignored. Nor anything pulled off a pedal: a `.msgpack` backup is someone's
 own presets.
 
 **Firmware, flash and DFU are out of scope.** See
-[docs/usb_upload_plan.md](docs/usb_upload_plan.md) §7 for the rest of the
+[docs/usb_protocol.md](docs/usb_protocol.md) §7 for the rest of the
 hardware safety rules, and hold to them - they were learned by wedging a unit.
 
 **Keep `docs/application_flow.md` current.** It is a trace of how the

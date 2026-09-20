@@ -147,7 +147,7 @@ is genuinely useful - including one that just says it worked.
 | [Guide](docs/guide.md) | Install, first tone, writing good prompts, troubleshooting. |
 | [CLI reference](docs/cli.md) | Every command and flag. |
 | [Application flow](docs/application_flow.md) | How it works, end to end. |
-| [USB protocol](docs/usb_upload_plan.md) | The research behind the device support. |
+| [USB protocol](docs/usb_protocol.md) | How the device support works: transport, document format, writing. |
 | [Legal](docs/legal.md) | Trademarks, and which data files are and are not distributed. |
 | [Contributing](CONTRIBUTING.md) | Setup, the checks CI runs, house rules. |
 

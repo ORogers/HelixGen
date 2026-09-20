@@ -228,7 +228,7 @@ actually occupies, and the two are independent on the wire.
 backup` and `hlxgen pull` are the read-only halves of the same transport.
 
 **Firmware, flash and DFU are out of scope and are never transmitted.** See
-[`usb_upload_plan.md`](usb_upload_plan.md) §7 for the rest of the safety rules.
+[`usb_protocol.md`](usb_protocol.md) §7 for the rest of the safety rules.
 
 ### 5b. AppleScript — the fallback
 

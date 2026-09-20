@@ -118,7 +118,7 @@ KEY_SLOT: Final = 108
 STATUS_REFUSED: Final = 255
 
 #: Operations. Only the read side is exercised here; the write ops that reach
-#: flash directly (5, 8, 16) are deliberately absent -- see ``docs/usb_upload_plan.md``.
+#: flash directly (5, 8, 16) are deliberately absent -- see ``docs/usb_protocol.md``.
 OP_PRESETS_OPEN: Final = 0
 OP_LIST_PRESETS: Final = 1
 OP_READ_SLOT: Final = 4

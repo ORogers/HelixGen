@@ -50,7 +50,7 @@ message, a crash report, the preset files themselves - are in scope and welcome.
 
 HelixPy writes to real hardware, so a bug here can cost someone their presets.
 The project holds itself to the rules in
-[docs/usb_upload_plan.md](docs/usb_upload_plan.md) §7, the first of which is
+[docs/usb_protocol.md](docs/usb_protocol.md) §7, the first of which is
 absolute:
 
 > **Firmware, flash and DFU are out of scope and must never be transmitted.**

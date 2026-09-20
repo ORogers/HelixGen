@@ -13,9 +13,9 @@
 - [application_flow.md](application_flow.md) - a trace of every path through
   the application, from a command or a click to a written preset and a slot on
   the pedal.
-- [usb_upload_plan.md](usb_upload_plan.md) - the protocol research behind the
-  device support: what the wire format is, how it was worked out, the safety
-  rules, and what is still open.
+- [usb_protocol.md](usb_protocol.md) - how the device support works: the USB
+  transport, the preset document format, the name-to-ordinal mapping, how a
+  preset is written, and the safety rules.
 - [hlxgen_functional_requirements.md](hlxgen_functional_requirements.md) - the
   original functional requirements.
 - [examples/](examples/) - chain specifications in both supported formats.

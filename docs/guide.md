@@ -256,5 +256,5 @@ presets off the pedal, writing hand-authored chain files, and auditing the
 catalog against your HX Edit install. See [cli.md](cli.md).
 
 To understand how any of it works, [application_flow.md](application_flow.md)
-traces every path end to end, and [usb_upload_plan.md](usb_upload_plan.md) is
-the protocol research behind the device support.
+traces every path end to end, and [usb_protocol.md](usb_protocol.md) explains
+how the device support works.

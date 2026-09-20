@@ -17,7 +17,7 @@ say what the project does.
 
 All of it is black-box interoperability work: USB traffic observed between
 hardware and software the author owns and is licensed to use, then reasoned
-about and written up in [`usb_upload_plan.md`](usb_upload_plan.md).
+about and written up in [`usb_protocol.md`](usb_protocol.md).
 
 It contains **no Line 6 source code, firmware, or SDK**, and none was consulted.
 Firmware, flash and DFU operations are out of scope and are never transmitted -
