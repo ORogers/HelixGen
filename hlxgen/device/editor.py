@@ -86,6 +86,10 @@ class EditReport:
     bypassed: list[str] = field(default_factory=list)
     footswitches: list[str] = field(default_factory=list)
     snapshots: list[str] = field(default_factory=list)
+    #: Parameters put under snapshot control, as ``"dsp0.block2.Drive"``.
+    snapshot_controls: list[str] = field(default_factory=list)
+    #: Controller assignments the tone makes that could not be written.
+    unsupported_controllers: list[str] = field(default_factory=list)
     #: How many USB sessions the run needed; it renews before the sequence wrap.
     sessions: int = 1
     #: Parameters skipped because their value had no wire representation.
@@ -112,6 +116,12 @@ class EditReport:
             lines.append(f"  footswitches: {', '.join(self.footswitches)}")
         if self.snapshots:
             lines.append(f"  snapshots: {', '.join(self.snapshots)}")
+        if self.snapshot_controls:
+            lines.append(f"  snapshot-controlled: {', '.join(self.snapshot_controls)}")
+        if self.unsupported_controllers:
+            lines.append(
+                f"  controllers not written: {', '.join(self.unsupported_controllers)}"
+            )
         lines.extend(f"  swapped {name}" for name in self.swapped)
         if self.unsupported:
             lines.append(f"  unsupported values: {', '.join(self.unsupported)}")
@@ -550,6 +560,15 @@ def apply_tone(
     # block and cannot be switched on its own, and remapping it onto the amp
     # would just give two switches that toggle the same thing.
     placed = {entry["name"]: index for index, entry in wanted.items()}
+    # Where a controller aimed at a tone block lands: the block's own slot and
+    # model, or -- for a cab fused into its amp -- the amp's slot and paired model.
+    targets: dict[str, ControllerTarget] = {}
+    for index, entry in wanted.items():
+        targets[entry["name"]] = ControllerTarget(index, entry["symbol"], MODEL_MAIN, entry["block"])
+        if entry["cab_name"] is not None and entry["paired_symbol"] is not None:
+            targets[entry["cab_name"]] = ControllerTarget(
+                index, entry["paired_symbol"], MODEL_PAIRED, entry["cab_block"]
+            )
     try:
         # A fresh session for the layout: the run above has spent most of its
         # frame budget, and the write is another dozen on top of a full read.
@@ -557,7 +576,15 @@ def apply_tone(
         run.session = run._open(info)
         run.sessions += 1
         _apply_layout(
-            run.session, preset, placed, bank=bank, slot=slot, name=preset_name, report=report
+            run.session,
+            preset,
+            placed,
+            targets,
+            bank=bank,
+            slot=slot,
+            name=preset_name,
+            catalog=catalog,
+            report=report,
         )
     finally:
         run.close()
@@ -591,14 +618,26 @@ def _apply_cab_values(
             report.unsupported.append(f"cab.{key}")
 
 
+@dataclass(frozen=True)
+class ControllerTarget:
+    """The device address of a tone block's parameters."""
+
+    slot: int
+    symbol: Any
+    model_sel: int
+    block: dict
+
+
 def _apply_layout(
     session: Any,
     preset: dict,
     placed: dict[str, int],
+    targets: dict[str, ControllerTarget],
     *,
     bank: int,
     slot: int,
     name: str,
+    catalog: Any,
     report: EditReport,
 ) -> None:
     """Write the footswitch layout and snapshots, which the edit ops do not carry.
@@ -666,9 +705,124 @@ def _apply_layout(
         ):
             report.snapshots.append(str(snapshot.get("@name") or index))
 
+    _apply_snapshot_controllers(document, tone, targets, catalog, report)
+
+    current = tone.get("global", {}).get("@current_snapshot")
+    if isinstance(current, int) and not isinstance(current, bool):
+        document.set_current_snapshot(current)
+
     if not document.modified:
         return
 
     session.push_document(
         dump(document), slot=slot, name=name, bank=bank, donor=raw, verify=False
     )
+
+
+def _apply_snapshot_controllers(
+    document: Any,
+    tone: dict,
+    targets: dict[str, ControllerTarget],
+    catalog: Any,
+    report: EditReport,
+) -> None:
+    """Put the tone's snapshot-controlled parameters under snapshot control.
+
+    Without this every snapshot recalls the same knob positions and only its
+    on/off states differ. Each ``tone.controller`` entry with ``@controller: 9``
+    becomes a device assignment, and each snapshot's ``controllers`` value its
+    per-snapshot value.
+
+    The device refuses a value of the wrong type, and the ``.hlx`` does not say
+    which type a parameter is. The document read back after the edits does: it
+    holds the block's own value at that ordinal in the device's type, so every
+    snapshot value and the range are converted to match it.
+    """
+    from hlxgen.device.document import CONTROLLER_SNAPSHOT
+
+    # The donor's assignments name blocks by slot; left in place they would drive
+    # whatever the new tone put there.
+    document.clear_controllers()
+    snapshot_count = len(document.snapshots())
+
+    for dsp_name, blocks in (tone.get("controller") or {}).items():
+        if not isinstance(blocks, dict):
+            continue
+        for block_id, parameters in blocks.items():
+            if not isinstance(parameters, dict):
+                continue
+            for key, assignment in parameters.items():
+                label = f"{dsp_name}.{block_id}.{key}"
+                target = targets.get(f"{dsp_name}.{block_id}")
+                if (
+                    target is None
+                    or not isinstance(assignment, dict)
+                    or assignment.get("@controller") != CONTROLLER_SNAPSHOT
+                ):
+                    report.unsupported_controllers.append(label)
+                    continue
+
+                ordinal = target.symbol.ordinal_of(key)
+                stored = document.values(target.slot, cab=target.model_sel == MODEL_PAIRED)
+                if ordinal is None or stored is None or ordinal >= len(stored):
+                    report.unsupported_controllers.append(label)
+                    continue
+                kind = type(stored[ordinal])
+                model_name = str(target.block.get("@model", ""))
+                values = []
+                for index in range(snapshot_count):
+                    snapshot = tone.get(f"snapshot{index}") or {}
+                    entry = (
+                        (snapshot.get("controllers") or {})
+                        .get(dsp_name, {})
+                        .get(block_id, {})
+                        .get(key)
+                    )
+                    raw = entry.get("@value") if isinstance(entry, dict) else None
+                    values.append(
+                        stored[ordinal]
+                        if raw is None
+                        else _as_wire_type(raw, kind, catalog, model_name, key)
+                    )
+                minimum = _as_wire_type(assignment.get("@min"), kind, catalog, model_name, key)
+                maximum = _as_wire_type(assignment.get("@max"), kind, catalog, model_name, key)
+                if minimum is None or maximum is None or any(v is None for v in values):
+                    report.unsupported_controllers.append(label)
+                    continue
+
+                assigned = document.add_snapshot_controller(
+                    slot=target.slot,
+                    parameter=ordinal,
+                    model_sel=target.model_sel,
+                    minimum=minimum,
+                    maximum=maximum,
+                    values=values,
+                )
+                if assigned is None:
+                    report.unsupported_controllers.append(label)
+                else:
+                    report.snapshot_controls.append(label)
+
+
+def _as_wire_type(
+    raw: Any, kind: type, catalog: Any, model_name: str, parameter: str
+) -> Any | None:
+    """Convert ``raw`` to the device's type for a parameter, or None if it has none.
+
+    An enum named by its label resolves through the catalog, as block values do.
+    """
+    if isinstance(raw, str):
+        raw = enum_index(catalog, model_name, parameter, raw)
+    if raw is None:
+        return None
+    try:
+        if kind is bool:
+            return bool(raw)
+        if kind is int:
+            number = float(raw)
+            return int(number) if number.is_integer() else None
+        if kind is float:
+            return float(raw)
+    except (TypeError, ValueError):
+        return None
+    return None

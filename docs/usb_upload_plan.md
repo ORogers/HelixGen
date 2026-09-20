@@ -236,6 +236,9 @@ not carry rather than guessing.
 | `@fs_label` / `@fs_ledcolor` / `@fs_enabled` | `11 → 5` (NUL-terminated) / `11 → 6` / `11 → 7` |
 | `snapshotN.@name` / `@tempo` / `@valid` | snapshot keys `4` / `5` / `0` |
 | `snapshotN.blocks.dspN.<name>` | snapshot key `3[wire slot][1]` |
+| `global.@current_snapshot` | snapshot group key `6` |
+| `controller.dspN.blockM.<param>` | an assignment in `preset[4][9]` |
+| `snapshotN.controllers.….<param>.@value` | snapshot key `2[assignment id][2]` |
 | `global.@topologyN` | DSP group key `21` |
 
 Two counter-intuitive points, both load-bearing:
@@ -552,7 +555,59 @@ shape stands in.
 
 **Snapshots** are `preset[10][10]`, and §4's mapping holds exactly: `@name` at
 key `4` (NUL-terminated), `@tempo` at `5`, `@valid` at `0`, and a block's
-per-snapshot state at `3[slot][1]`.
+per-snapshot state at `3[slot][1]`. The snapshot the preset opens on is the
+group's key `6`. The device stores no "custom name" flag: a snapshot is named or
+it is not.
+
+### Snapshot-controlled parameters [decoded live; the fix awaits a re-check]
+
+On/off states alone make every snapshot the same tone with blocks muted. What
+makes a snapshot a *sound* is that it recalls its own knob positions, and those
+are held in two places at once:
+
+- **The assignment** lives in `preset[4]`, a list indexed by **controller
+  source** — 1 and 2 are the expression pedals, **9 is Snapshots**. Each entry is
+  `{0: id, 1: {0: source, 2: min, 3: max, 5: block slot, 6: {28: sub-model,
+  29: parameter ordinal}, 7: sub-model}}`, with the parameter ordinal in the same
+  `Helix.sym` index space a set-value uses, and the sub-model selector picking a
+  fused cab exactly as it does there. `1: 4` and `13: false` are constant across
+  all 349 assignments read off the pedal.
+- **The values** live in each snapshot's key `2`: 64 entries of
+  `[fs_enabled, id, value]`, indexed by the **assignment id**, which is one pool
+  shared by every source. An unused entry is `[false, 64, nil]`; stale entries
+  from a deleted assignment keep an old value and an id of 13 or 64, and the
+  device treats both as unused.
+
+A value has to carry the parameter's own type, as everywhere else on this wire.
+The `.hlx` does not say which type that is, and here there is nothing to probe
+against — a document is written whole. The **document read back after the edits**
+settles it: it holds the block's own value at that ordinal in the device's type,
+so the range and every snapshot value are converted to match it.
+
+#### The count at `preset[10][8]` is load-bearing [verified live]
+
+The snapshot group's key `8` is **how many controller assignments the preset
+holds**, across every source. It matches the count in `preset[4]` on all 126
+presets on the owner's pedal.
+
+Leaving it at `0` produces a preset that looks entirely correct and is not:
+HX Edit draws the brackets that mark a parameter as snapshot-controlled, the
+assignments read back intact, and the pedal still recalls the same knob positions
+in every snapshot. That failure was observed live, and it was **visible only in
+HX Edit** — by switching snapshots and watching a value that should have changed
+and did not. No error, no refusal, and nothing in the read-back to compare
+against but another preset.
+
+**Still to confirm on hardware:** that setting the count makes the pedal recall
+the values. The uploaded preset carries the right count now (6 of 6 read back),
+but the pedal was disconnected before HX Edit could be reopened on it. Repeat the
+check the same way: push a tone with snapshot values to a scratch slot, quit and
+reopen HX Edit (it holds the USB interface), load the preset from flash, and
+switch snapshots watching a controlled value.
+
+Assignments the donor held are dropped before the tone's own are written, for the
+same reason a footswitch binding is: an assignment names its target by **slot**,
+so one left behind drives whatever block the new tone put in that slot.
 
 ### Applying a tone outlasts a single session [verified live]
 
@@ -704,6 +759,12 @@ documented shape, so the suite needs no proprietary data and no hardware.
 - [x] Footswitch bindings, labels and LED colours, and snapshot names, tempos and
       per-block states — written as a second phase, since the edit ops do not
       carry them.
+- [x] **Snapshot-controlled parameters**: the assignments in `preset[4][9]`, a
+      value per snapshot in each snapshot's key `2`, and the assignment count at
+      `preset[10][8]` without which the device recalls nothing. Written and read
+      back intact from a scratch slot.
+- [ ] Confirm on the pedal that the values are actually recalled when the
+      snapshot changes — see the note at the end of §5.
 - [x] Per-block on/off state, with `op 41`'s polarity established by measurement
       rather than by the op's name.
 - [x] Path A (`op 20`/`40`/`30`/`41`/`28`/`71`) built as `device/editor.py` and
@@ -735,6 +796,10 @@ slot, survives a power cycle, and reads back correct.
 - [ ] The tone's input/output nodes and routing (`split`/`join`/`inputA`) are
       still left to whatever the target slot held. Only the chain, the footswitch
       layout and the snapshots are written.
+- [ ] Only the snapshot controller (source 9) is written. A tone that assigns an
+      expression pedal or a footswitch to a parameter has those assignments
+      reported as unwritten rather than transferred; `--via document` does not
+      carry controllers at all.
 
 ### Later, not now
 
