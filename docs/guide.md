@@ -137,10 +137,11 @@ right, with the generated chain across the bottom.
    > warm, dark jazz tone - hollowbody into a small valve amp, light compression,
    > a short room reverb, nothing modern
 
-4. **Generate.** Two things happen, and the panel shows both. First the model
-   picks the blocks; then a second call sets every parameter across the whole
-   chain at once, so it can balance gain and levels rather than tuning each
-   block blind. A few seconds on OpenAI, tens of seconds on Ollama.
+4. **Generate.** Three things happen, and the panel shows each. The model picks
+   the blocks; a second call sets every parameter across the whole chain at
+   once, so it can balance gain and levels rather than tuning each block blind;
+   a third designs the preset's three snapshots. A few seconds on OpenAI, tens
+   of seconds on Ollama.
 
 5. **Read the preview.** The chain appears in signal order, block by block.
    This is the point to notice that it gave you a high-gain amp for a jazz
@@ -151,6 +152,27 @@ right, with the generated chain across the bottom.
 
 If "Upload after generating" is ticked, step 6 happens on its own as soon as a
 tone is generated - but still only into a slot you picked.
+
+### What the snapshots give you
+
+A described tone does not arrive as one fixed setting. It arrives as **three**,
+on the pedal's snapshot switches: clean / crunch / lead, say, or rhythm / solo
+/ ambient, chosen to suit what you asked for.
+
+Each snapshot both switches blocks on or off *and* re-dials the parameters it
+needs, so the lead snapshot is not simply the rhythm sound with the boost
+un-muted - its amp drive, delay mix and levels move too. On the pedal those
+knobs really move when you switch, because a parameter any snapshot changes
+becomes a snapshot-controlled parameter in the preset.
+
+To see them before uploading:
+
+```bash
+helixgen inspect ~/Documents/HelixGen/presets/<name>.hlx
+```
+
+The table under the chain lists every block down the side and every snapshot
+across the top, with each controlled parameter's value per snapshot.
 
 ### The same thing from the command line
 
@@ -181,10 +203,16 @@ sterile" all steer it.
 **Keep the chain short.** An HX Stomp has eight blocks. Ask for less and each
 one gets more thought.
 
+**Say what the three snapshots should be**, if you have something in mind -
+"clean, crunch and a lead with more delay", or "one for verses, one for
+choruses, one ambient". Left unsaid, the model picks a spread that suits the
+tone.
+
 Two things the model does not control:
 
 - **Cabinets keep their defaults.** Cab controls - mic, distance, angle - rarely
   follow from a description, and an amp brings its own cab with it anyway.
+- **The number of snapshots.** Always three, which is what an HX Stomp has.
 - **Anything outside the catalog.** The response is constrained to real model
   names and in-range values. A tone it cannot express is refused and re-asked
   once, with the reason attached, rather than being fudged into something the
@@ -241,6 +269,13 @@ running. `ollama serve`.
 
 **The first Ollama run is very slow.** The model is being loaded into memory.
 It is kept loaded for thirty minutes afterwards, so the next tone is quicker.
+
+**A snapshot switches blocks but the knobs do not move.** Snapshot-controlled
+values are the newest part of the upload path and the one piece still awaiting
+a check on real hardware - see §8 of
+[usb_protocol.md](usb_protocol.md#8-not-implemented-and-not-yet-confirmed). The
+block on/off states are verified and do work. If you hit this, a report saying
+so is genuinely useful, with your device and firmware version.
 
 **Validation errors after generating.** The model produced something the
 catalog rejects and could not fix it on a second attempt. Nothing was written.

@@ -39,9 +39,13 @@ helixgen describe "70s funk clean" --llm-backend ollama   # local, free, offline
 helixgen describe "warm jazz comp" --upload --upload-via usb --slot 4
 ```
 
-Two model calls - blocks, then every parameter at once - and the result is
-validated before anything is written. Without `--output` it lands in
-`./generated-presets/<name>.hlx`.
+Three model calls - the blocks, then every parameter at once, then the three
+snapshots - and the result is validated before anything is written. Without
+`--output` it lands in `./generated-presets/<name>.hlx`.
+
+The snapshots are designed for the tone rather than copied: each one switches
+blocks on or off and re-dials the parameters it needs, so a described tone
+arrives as three usable sounds. `helixgen inspect` shows them side by side.
 
 | Flag | Default | |
 | --- | --- | --- |
@@ -75,6 +79,27 @@ The full form mirrors the preset structure, letting you set `meta`, `global`,
 `input`, `output`, per-block parameters and footswitch assignments. Anything
 omitted falls back to the template and the catalog's defaults. See
 [`docs/examples/`](examples/) for both.
+
+**Snapshots.** Either form may carry a `snapshots` list - up to three on an HX
+Stomp. Each has a `name` (the device shows 10 characters) and a `blocks` map
+keyed by the block's zero-based index, saying what that snapshot changes:
+`enabled` to switch a block on or off, `parameters` to re-dial it. A block a
+snapshot does not mention keeps its own settings.
+
+```json
+"snapshots": [
+  {"name": "Clean",  "blocks": {"1": {"enabled": false},
+                                "2": {"parameters": {"Drive": 0.2}}}},
+  {"name": "Rhythm"},
+  {"name": "Solo",   "blocks": {"4": {"enabled": true,
+                                      "parameters": {"Mix": 0.3}}}}
+]
+```
+
+[`docs/examples/snapshots_chain.json`](examples/snapshots_chain.json) is a
+worked example. A parameter any snapshot changes becomes a snapshot-controlled
+parameter on the pedal, so the knob moves when you switch snapshots rather than
+the block simply muting.
 
 **Name an option, do not number it.** Write `"Note": "1/8 Dotted"`, not
 `"Note": 7`. The number a preset stores is the device's own, which is the
