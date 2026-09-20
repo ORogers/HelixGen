@@ -11,6 +11,20 @@ from typing import ClassVar
 
 import pytest
 
+from helixgen.device.document import (
+    CONTROLLER_SNAPSHOT,
+    KEY_CONTENT,
+    KEY_CONTROLLER_COUNT,
+    KEY_CONTROLLER_GROUP,
+    KEY_SLOT_ARRAY,
+    KEY_SNAPSHOT_GROUP,
+    KEY_TAG,
+    KEY_VALUES,
+    KEY_VECTOR,
+    MAGIC,
+    TAG_BLOCK,
+    Document,
+)
 from helixgen.device.editor import (
     K_ENABLED,
     K_MODEL_FLAG,
@@ -30,12 +44,44 @@ from helixgen.device.editor import (
     OP_SET_VALUE,
     OP_SWAP_MODEL,
     BlockEditor,
+    ControllerTarget,
     DspBudgetError,
     EditError,
+    EditReport,
+    _apply_snapshot_controllers,
     _wire_candidates,
     enum_index,
 )
 from helixgen.device.usb import DeviceRefusedError
+
+
+class _Symbol:
+    """A device symbol: the parameter order the wire addresses by index."""
+
+    def __init__(self, ordinals: dict[str, int]):
+        self._ordinals = ordinals
+
+    def ordinal_of(self, name: str) -> int | None:
+        return self._ordinals.get(name)
+
+
+class _Catalog:
+    """Just enough catalog to resolve an enum label to its index."""
+
+    def __init__(self, maps: dict[str, dict[str, int]]):
+        self._maps = maps
+
+    def get(self, model_name: str):
+        maps = self._maps
+
+        class _Model:
+            def get_parameter(self, name):
+                class _Definition:
+                    reverse_map = maps[name]
+
+                return _Definition()
+
+        return _Model()
 
 
 class FakeSession:
@@ -234,3 +280,159 @@ class TestSaveAndSelect:
         session = FakeSession()
         BlockEditor(session).delete_block(6)
         assert session.sent[0] == (OP_DELETE_BLOCK, {K_SLOT: 6})
+
+
+class TestSnapshotControllers:
+    """Writing a tone's snapshot-controlled parameters into the document.
+
+    The device takes these from the document rather than from an edit op, and it
+    refuses a value whose type is wrong -- so the types come from the block's own
+    stored values, read back after the edits.
+    """
+
+    @staticmethod
+    def _document(values: list | None = None, cab_values: list | None = None) -> Document:
+        block = {
+            KEY_TAG: TAG_BLOCK,
+            KEY_CONTENT: {
+                KEY_VALUES: {2: 0, 3: 0, KEY_VECTOR: list(values or [0.4, 0.5, True])},
+                12: {2: 0, 3: 0, KEY_VECTOR: list(cab_values or [])},
+            },
+        }
+        preset = {
+            0: {KEY_SLOT_ARRAY: [None, block, None]},
+            KEY_CONTROLLER_GROUP: [None] * 10,
+            KEY_SNAPSHOT_GROUP: {
+                6: 0,
+                8: 0,
+                10: [
+                    {2: [[False, 64, None] for _ in range(64)], 4: b"S\x00"}
+                    for _ in range(3)
+                ],
+            },
+        }
+        return Document(magic=MAGIC, header_slots=[], header_len=0, preset=preset)
+
+    @staticmethod
+    def _tone(*, values: list, minimum=0.0, maximum=1.0, controller: int = 9) -> dict:
+        tone: dict = {
+            "controller": {
+                "dsp0": {"block0": {"Drive": {"@controller": controller, "@min": minimum, "@max": maximum}}}
+            }
+        }
+        for index, value in enumerate(values):
+            tone[f"snapshot{index}"] = {
+                "controllers": {"dsp0": {"block0": {"Drive": {"@fs_enabled": False, "@value": value}}}}
+            }
+        return tone
+
+    @staticmethod
+    def _targets(symbol=None, *, model_sel: int = MODEL_MAIN, block: dict | None = None) -> dict:
+        return {
+            "dsp0.block0": ControllerTarget(
+                1, symbol or _Symbol({"Drive": 0}), model_sel, block or {"@model": "Brit Plexi Brt"}
+            )
+        }
+
+    def _apply(self, document, tone, targets=None, catalog=None) -> EditReport:
+        report = EditReport()
+        if targets is None:
+            targets = self._targets()
+        _apply_snapshot_controllers(document, tone, targets, catalog, report)
+        return report
+
+    def test_writes_an_assignment_and_a_value_per_snapshot(self):
+        document = self._document()
+        report = self._apply(document, self._tone(values=[0.2, 0.45, 0.6]))
+
+        assert report.snapshot_controls == ["dsp0.block0.Drive"]
+        (assignment,) = document.controller_assignments(CONTROLLER_SNAPSHOT)
+        assert assignment[1][5] == 1  # the block's slot
+        assert assignment[1][6][29] == 0  # the parameter's device ordinal
+        assert [s[2][0][2] for s in document.snapshots()] == [0.2, 0.45, 0.6]
+        assert document.preset[KEY_SNAPSHOT_GROUP][KEY_CONTROLLER_COUNT] == 1
+
+    def test_a_snapshot_that_does_not_change_it_keeps_the_block_value(self):
+        document = self._document(values=[0.4])
+        tone = self._tone(values=[0.2, 0.6])
+        del tone["snapshot1"]
+        tone["snapshot2"] = {}
+
+        self._apply(document, tone)
+
+        assert [s[2][0][2] for s in document.snapshots()] == [0.2, 0.4, 0.4]
+
+    def test_values_take_the_type_the_device_stores(self):
+        """A switch written as 1 must go as a bool: the device refuses an int."""
+        document = self._document(values=[0.4, 0.5, True])
+        tone = self._tone(values=[1, 0, True], minimum=False, maximum=True)
+        tone["controller"]["dsp0"]["block0"] = {
+            "Bright": {"@controller": 9, "@min": False, "@max": True}
+        }
+        for index in range(3):
+            tone[f"snapshot{index}"]["controllers"]["dsp0"]["block0"] = {
+                "Bright": {"@value": [1, 0, True][index]}
+            }
+
+        self._apply(document, tone, self._targets(_Symbol({"Bright": 2})))
+
+        assert [s[2][0][2] for s in document.snapshots()] == [True, False, True]
+        assert document.controller_assignments(CONTROLLER_SNAPSHOT)[0][1][2] is False
+
+    def test_an_enum_label_resolves_through_the_catalog(self):
+        document = self._document(values=[0, 1, 2])
+        tone = self._tone(values=["4:1", "2:1", "2:1"])
+
+        report = self._apply(document, tone, catalog=_Catalog({"Drive": {"2:1": 0, "4:1": 2}}))
+
+        assert report.snapshot_controls == ["dsp0.block0.Drive"]
+        assert [s[2][0][2] for s in document.snapshots()] == [2, 0, 0]
+
+    def test_a_fused_cab_is_addressed_as_the_amp_s_paired_model(self):
+        """A cab inside its amp is the amp's slot plus the paired sub-model.
+
+        Its values live in the block's second vector, so the type comes from
+        there too -- reading the amp's would give the wrong parameter.
+        """
+        document = self._document(values=[0.4], cab_values=[0.1, 0.9])
+        targets = self._targets(_Symbol({"Drive": 1}), model_sel=MODEL_PAIRED)
+
+        self._apply(document, self._tone(values=[0.3, 0.3, 0.3]), targets)
+
+        (assignment,) = document.controller_assignments(CONTROLLER_SNAPSHOT)
+        assert assignment[1][7] == MODEL_PAIRED
+        assert assignment[1][6][28] == MODEL_PAIRED
+        assert assignment[1][6][29] == 1
+
+    def test_the_donor_s_assignments_are_dropped(self):
+        """An assignment left behind would drive whatever block now holds its slot."""
+        document = self._document()
+        document.preset[KEY_CONTROLLER_GROUP][1] = [{0: 0, 1: {0: 1, 5: 7}}]
+        for snapshot in document.snapshots():
+            snapshot[2][0] = [False, 0, 0.9]
+
+        self._apply(document, self._tone(values=[0.2, 0.2, 0.2]))
+
+        assert document.preset[KEY_CONTROLLER_GROUP][1] is None
+        assert document.preset[KEY_SNAPSHOT_GROUP][KEY_CONTROLLER_COUNT] == 1
+
+    @pytest.mark.parametrize(
+        ("kwargs", "symbol"),
+        [
+            ({"controller": 1}, None),  # an expression pedal, which push cannot write
+            ({}, _Symbol({})),  # a parameter the device model has no ordinal for
+        ],
+    )
+    def test_what_cannot_be_written_is_reported(self, kwargs, symbol):
+        document = self._document()
+        report = self._apply(
+            document, self._tone(values=[0.2, 0.2, 0.2], **kwargs), self._targets(symbol)
+        )
+
+        assert report.unsupported_controllers == ["dsp0.block0.Drive"]
+        assert report.snapshot_controls == []
+        assert document.controller_assignments(CONTROLLER_SNAPSHOT) == []
+
+    def test_a_block_that_never_landed_is_reported(self):
+        report = self._apply(self._document(), self._tone(values=[0.2, 0.2, 0.2]), {})
+        assert report.unsupported_controllers == ["dsp0.block0.Drive"]

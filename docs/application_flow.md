@@ -97,9 +97,10 @@ suffix is rejected before the file is opened.
 
 `describe` synthesises one instead, and this is where the tool spends nearly all of
 its wall-clock time. The desktop UI (`helixgen_ui.generation.generate_tone`) takes the
-same path. It makes **two model calls** however long the chain is: one to pick the
-blocks, then one to set every block's parameters. Both go through the same
-`call_llm` closure, so the backend, model and thinking level apply to both rounds.
+same path. It makes **three model calls** however long the chain is: one to pick the
+blocks, one to set every block's parameters, and one to design the preset's three
+snapshots. All three go through the same `call_llm` closure, so the backend, model
+and thinking level apply to every round.
 
 ```mermaid
 flowchart TD
@@ -117,7 +118,10 @@ flowchart TD
     parse --> r2["ROUND 2 - all parameters in one call<br>cabs and blocks without non-@ parameters keep defaults<br>schema: block1…blockN → every parameter nullable,<br>continuous values in range, options by label,<br>unlabelled discrete parameters as integers in the device's range"]
     r2 --> norm["_parse_parameters_response() → _normalize_parameters()<br>null = keep default · labels mapped to option numbers"]
     norm -- "rejected" --> retry2["re-ask once with the reason appended"] --> norm
-    norm --> out["chain dict → the shared spine in section 1"]
+    norm --> r3["ROUND 3 - snapshot design<br>every block by position with its chosen values, and the<br>parameters a snapshot controller can sweep<br>schema: exactly 3 named snapshots (≤10 chars), each block's<br>enabled and parameters nullable"]
+    r3 --> snap["_parse_snapshots_response()<br>null = leave as the block has it · one-based block keys<br>become zero-based chain indexes"]
+    snap -- "rejected" --> retry3["re-ask once with the reason appended"] --> snap
+    snap --> out["chain dict → the shared spine in section 1"]
 ```
 
 The catalog is the only authority on names: the schema only admits catalog names,
@@ -150,11 +154,36 @@ flowchart TD
     l4 --> payload["tone.dsp0.block0 … blockN"]
 
     payload --> fs["FOOTSWITCH ASSIGNMENT<br>an explicit block 'footswitch' index always wins<br>every remaining block queues for footswitches 1–3<br>distortion, modulation and delay go to the front of that queue<br>anything past switch 3 gets none"]
-    payload --> sn["SNAPSHOTS AND METADATA<br>the template's three snapshots ride through; each blockN is<br>set true in every one by setdefault, so all three start identical<br>device · device_version · appversion via _coerce_numeric<br>ints, floats and 0x… hex accepted; other strings fall back to template<br>dsp1 and variax ride through from the template untouched"]
+    payload --> sn["SNAPSHOTS<br>_apply_snapshots(): each tone.snapshotN records every blockN's<br>bypass state, defaulting to the block's own @enabled<br>a parameter any snapshot changes gets a tone.controller entry<br>(@controller 9 = Snapshots, @min/@max = its range) and every<br>snapshot stores its own @value<br>dsp0 is then synced to the @current_snapshot"]
+    payload --> md["METADATA<br>device · device_version · appversion via _coerce_numeric<br>ints, floats and 0x… hex accepted; other strings fall back to template<br>dsp1 and variax ride through from the template untouched"]
 ```
 
 Only `dsp0` is ever rebuilt: a chain cannot currently place blocks on the second
 signal path.
+
+### Snapshots
+
+A chain may carry a `snapshots` list, one entry per template snapshot (three on HX
+Stomp). Each entry has an optional `name` (the device shows at most 10 characters;
+longer ones are truncated with a warning) and a `blocks` map keyed by the block's
+zero-based index in the chain:
+
+```json
+"snapshots": [
+  {"name": "Clean", "blocks": {"1": {"enabled": false}, "2": {"parameters": {"Drive": 0.2}}}},
+  {"name": "Rhythm"},
+  {"name": "Solo", "blocks": {"4": {"enabled": true, "parameters": {"Mix": 0.35}}}}
+]
+```
+
+The block's own `enabled` and `parameters` are the baseline; a snapshot lists only
+what it changes. This mirrors how HX Edit stores them: every block's bypass state
+lives in `snapshotN.blocks.dsp0`, and a parameter becomes snapshot-controlled
+through a `tone.controller.dsp0.blockN.<param>` entry with `@controller: 9`, after
+which every snapshot holds its own `@value` in `snapshotN.controllers`. A parameter
+whose range the catalog does not know cannot carry a controller and is rejected, as
+is a bypass change on a block marked `no_snapshot_bypass`. A chain without
+`snapshots` gets the template's, with each block's `@enabled` copied in.
 
 ## 4. The validation gate
 
@@ -167,7 +196,7 @@ identical standards.
 | Pass | Reads | Rejects |
 | --- | --- | --- |
 | `validate_structural` | `helix-preset.schema.json`, through `SimpleSchemaValidator` — a hand-rolled subset supporting `type`, `required`, `properties`, `additionalProperties`, `items` and `minItems` | A missing `meta.application`, `meta.appversion`, `meta.name`, `tone.global.@tempo`, `@current_snapshot`, `dsp0.inputA` or `dsp0.outputA`; wrong JSON types. Booleans are deliberately not counted as numbers. |
-| `validate_semantic` | The model catalog, walking every entry in `tone.dsp0` | A block whose `@model` is absent from the catalog, any non-`@` key that is not a real parameter of that model, or a value the parameter definition refuses to normalize. Names starting `HelixStomp_AppDSPFlow` or `HD2_AppDSPFlow` are treated as routing infrastructure and skipped, which is how `inputB`/`outputB` pass without catalog entries. |
+| `validate_semantic` | The model catalog, walking every entry in `tone.dsp0`, `tone.controller` and each `tone.snapshotN` | A block whose `@model` is absent from the catalog, any non-`@` key that is not a real parameter of that model, or a value the parameter definition refuses to normalize. Snapshot bypass states and controller values must name blocks that exist, and every snapshot value needs a matching `tone.controller` assignment. Names starting `HelixStomp_AppDSPFlow` or `HD2_AppDSPFlow` are treated as routing infrastructure and skipped, which is how `inputB`/`outputB` pass without catalog entries. |
 
 ## 5. Writing out, and getting it onto the pedal
 

@@ -55,18 +55,18 @@ same thing.
 **Working with preset files**
 
 - **Hand-authored chains** in JSON or YAML, in a short form (a title and a list
-  of model names) or a full one that reaches every parameter, footswitch and
-  routing field.
+  of model names) or a full one that reaches every parameter, footswitch,
+  snapshot and routing field.
 - **Validation before anything is written**, structurally against a JSON schema
   and semantically against the catalog - every model real, every value in
   range. The same gate backs a standalone `helixgen validate`.
-- **Snapshots that work on arrival.** A generated preset carries the pedal's
-  three snapshots with every block switched on in each, so they are usable the
-  moment it lands rather than empty. On upload the per-block states are
-  remapped to the slots the blocks actually ended up in and written separately,
-  because the device's edit operations do not carry them. All three snapshots
-  start identical - HelixGen does not yet write *different* ones, such as a lead
-  variant with more gain.
+- **Three snapshots per tone, each a different sound.** A described tone arrives
+  as clean / crunch / lead, or rhythm / solo / ambient - a third model call
+  designs them, switching blocks on and off and re-dialling the parameters each
+  one needs. `helixgen inspect` shows them side by side. On upload the per-block
+  states and snapshot-controlled values are remapped to the slots the blocks
+  actually ended up in and written separately, because the device's edit
+  operations do not carry them.
 - **Presets that import cleanly**, built from a known-good HX Stomp export so
   global parameters, routing and device identifiers match what HX Edit
   expects.
@@ -114,13 +114,15 @@ Or open the app, pick a slot, type what you want, press Generate.
 
 ## How it works
 
-A tone request becomes a preset in two model calls, however long the chain:
+A tone request becomes a preset in three model calls, however long the chain:
 
 1. **Blocks.** The prompt carries the signal-chain rules, two worked examples,
    and the whole catalog as one `name - based on` line per model. The model
    picks the chain.
 2. **Parameters.** A second call sets every block at once, so gain and levels
    are balanced across the chain rather than block by block.
+3. **Snapshots.** A third designs the preset's three snapshots, switching blocks
+   on or off and re-dialling what each one needs.
 
 Both answers are constrained to a JSON schema built from the catalog: only real
 model names, only in-range values, only listed option labels. Anything still

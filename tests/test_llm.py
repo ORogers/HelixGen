@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 import pytest
 
@@ -10,6 +10,8 @@ from helixgen.llm import (
     DEFAULT_OPENAI_MODEL,
     OPENAI_MODELS,
     REASONING_EFFORTS,
+    SNAPSHOT_COUNT,
+    SNAPSHOT_NAME_LIMIT,
     LLMGenerationError,
     LLMRequest,
     _build_llm_caller,
@@ -17,6 +19,7 @@ from helixgen.llm import (
     _compose_prompt,
     _ollama_num_ctx,
     _parameters_schema,
+    _snapshots_schema,
     _summarize_parameters,
     generate_chain_from_prompt,
     list_llm_models,
@@ -25,24 +28,36 @@ from helixgen.llm import (
 )
 
 
+def _default_snapshots() -> dict[str, Any]:
+    return {
+        "snapshots": [
+            {"name": f"Snap {number}", "blocks": {}}
+            for number in range(1, SNAPSHOT_COUNT + 1)
+        ]
+    }
+
+
 def _install_fake_ollama(
     monkeypatch: pytest.MonkeyPatch,
     *,
     chain: Any,
     parameters: Any = None,
+    snapshots: Any = None,
 ) -> list[tuple[LLMRequest, dict[str, Any]]]:
     """Answer each round with the given object (or raw string) and record the calls."""
 
     calls: list[tuple[LLMRequest, dict[str, Any]]] = []
+    answers = {"chain": chain, "parameters": parameters, "snapshots": snapshots}
+    fallbacks = {"parameters": {"blocks": {}}, "snapshots": _default_snapshots()}
 
     def fake_call(endpoint: str, model_name: str, llm_request: LLMRequest, **options: Any) -> str:
         _ = endpoint, model_name
         calls.append((llm_request, options))
-        answer = chain if llm_request.schema_name == "chain" else parameters
+        answer = answers.get(llm_request.schema_name)
         if callable(answer):
             answer = answer(llm_request)
         if answer is None:
-            answer = {"blocks": {}}
+            answer = fallbacks.get(llm_request.schema_name, {"blocks": {}})
         return answer if isinstance(answer, str) else json.dumps(answer)
 
     monkeypatch.setattr("helixgen.llm._call_ollama", fake_call)
@@ -152,7 +167,7 @@ def test_generate_chain_converts_minimal_spec(
     ]
 
 
-def test_generate_chain_makes_two_calls_for_any_chain_length(
+def test_generate_chain_makes_three_calls_for_any_chain_length(
     monkeypatch: pytest.MonkeyPatch, dataset_path: Path
 ) -> None:
     catalog = ModelCatalog(dataset_path)
@@ -161,7 +176,7 @@ def test_generate_chain_makes_two_calls_for_any_chain_length(
 
     generate_chain_from_prompt(prompt="five blocks", catalog=catalog, llm_model="fake-model")
 
-    assert [request.schema_name for request, _ in calls] == ["chain", "parameters"]
+    assert [request.schema_name for request, _ in calls] == ["chain", "parameters", "snapshots"]
     parameters_request = calls[1][0]
     configured = parameters_request.schema["properties"]["blocks"]["properties"]
     # Every block but the cab (block4) is configured in the one call.
@@ -280,7 +295,9 @@ def test_generate_chain_recovers_when_the_retry_succeeds(
     )
 
     assert chain["blocks"][0]["parameters"] == {"Gain": 0.5}
-    assert [request.schema_name for request, _ in calls] == ["chain", "parameters", "parameters"]
+    assert [request.schema_name for request, _ in calls] == [
+        "chain", "parameters", "parameters", "snapshots",
+    ]
     assert "Retrying parameter selection..." in messages
 
 
@@ -407,6 +424,8 @@ def test_generate_chain_with_openai_backend(
         seen.add((model_name, effort))
         if llm_request.schema_name == "parameters":
             return json.dumps({"blocks": {"block1": {}}})
+        if llm_request.schema_name == "snapshots":
+            return json.dumps(_default_snapshots())
         return json.dumps({"title": "AI Tone", "blocks": ["Horizon Drive"]})
 
     monkeypatch.setattr("helixgen.llm._call_openai", fake_call_openai)
@@ -423,3 +442,143 @@ def test_generate_chain_with_openai_backend(
     assert chain["meta"]["name"] == "AI Tone"
     assert chain["blocks"] == [{"model": "Horizon Drive"}]
     assert seen == {("gpt-5.6-luna", "none")}
+
+
+def _snapshot_request(calls) -> LLMRequest:
+    (request,) = [request for request, _ in calls if request.schema_name == "snapshots"]
+    return request
+
+
+class TestSnapshots:
+    """The third round: three usable variations rather than one fixed sound."""
+
+    CHAIN: ClassVar[dict[str, Any]] = {
+        "title": "Stack",
+        "blocks": ["Scream 808", "Brit Plexi Brt", "4x12 Greenback 25"],
+    }
+
+    def test_the_chain_carries_what_each_snapshot_changes(self, monkeypatch, dataset_path):
+        catalog = ModelCatalog(dataset_path)
+        _install_fake_ollama(
+            monkeypatch,
+            chain=self.CHAIN,
+            parameters={"blocks": {"block2": {"Drive": 0.45}}},
+            snapshots={
+                "snapshots": [
+                    {
+                        "name": "Clean",
+                        "blocks": {
+                            "block1": {"enabled": False, "parameters": None},
+                            "block2": {"enabled": None, "parameters": {"Drive": 0.2}},
+                        },
+                    },
+                    {"name": "Rhythm", "blocks": {"block1": {"enabled": True}}},
+                    {"name": "Solo", "blocks": {"block2": {"parameters": {"Drive": 0.6}}}},
+                ]
+            },
+        )
+
+        chain = generate_chain_from_prompt(
+            prompt="rock", catalog=catalog, llm_model="fake-model"
+        )
+
+        # Block keys are one-based in the answer and zero-based indexes in a chain.
+        assert chain["snapshots"] == [
+            {"name": "Clean", "blocks": {"0": {"enabled": False}, "1": {"parameters": {"Drive": 0.2}}}},
+            {"name": "Rhythm", "blocks": {"0": {"enabled": True}}},
+            {"name": "Solo", "blocks": {"1": {"parameters": {"Drive": 0.6}}}},
+        ]
+
+    def test_the_prompt_shows_each_block_s_chosen_values(self, monkeypatch, dataset_path):
+        catalog = ModelCatalog(dataset_path)
+        calls = _install_fake_ollama(
+            monkeypatch, chain=self.CHAIN, parameters={"blocks": {"block2": {"Drive": 0.45}}}
+        )
+
+        generate_chain_from_prompt(prompt="rock", catalog=catalog, llm_model="fake-model")
+
+        prompt = _snapshot_request(calls).prompt
+        assert "block2: Brit Plexi Brt" in prompt
+        assert "now 0.45" in prompt
+        # A cab keeps its defaults here too; it can only be switched.
+        assert "block3: 4x12 Greenback 25 (Cab)\n- on/off only" in prompt
+
+    def test_the_schema_pins_the_snapshot_count_and_name_length(self, dataset_path):
+        catalog = ModelCatalog(dataset_path)
+        summary = [
+            entry
+            for entry in _summarize_parameters(catalog.get("Scream 808"))
+            if entry["name"] == "Gain"
+        ]
+        schema = _snapshots_schema({"block1": summary})
+
+        snapshots = schema["properties"]["snapshots"]
+        assert snapshots["minItems"] == snapshots["maxItems"] == SNAPSHOT_COUNT
+        item = snapshots["items"]
+        assert item["properties"]["name"]["maxLength"] == SNAPSHOT_NAME_LIMIT
+        block = item["properties"]["blocks"]["properties"]["block1"]
+        assert block["properties"]["enabled"] == {"type": ["boolean", "null"]}
+        assert block["properties"]["parameters"]["properties"]["Gain"]["maximum"] == 1
+
+    def test_a_parameter_no_controller_can_sweep_is_left_out(self, monkeypatch, dataset_path):
+        """A snapshot value needs a range for the device's controller to sweep."""
+        catalog = ModelCatalog(dataset_path)
+        model = catalog.get("1x10 Princess Copperhead")
+        assert model.get_parameter("Early Reflections").controller_range() is None
+
+        calls = _install_fake_ollama(
+            monkeypatch,
+            chain={"title": "Cab", "blocks": ["Brit Plexi Brt", "1x10 Princess Copperhead"]},
+        )
+        generate_chain_from_prompt(prompt="rock", catalog=catalog, llm_model="fake-model")
+
+        request = _snapshot_request(calls)
+        assert "Early Reflections" not in request.prompt
+        assert "Drive" in request.prompt
+
+    @pytest.mark.parametrize(
+        ("answer", "message"),
+        [
+            ({"snapshots": [{"name": "Only", "blocks": {}}]}, "exactly 3"),
+            (
+                {"snapshots": [{"name": "A", "blocks": {"block9": {}}}, {"name": "B", "blocks": {}}, {"name": "C", "blocks": {}}]},
+                "unknown block",
+            ),
+            (
+                {"snapshots": [{"name": "A", "blocks": {"block1": {"parameters": {"Bogus": 1}}}}, {"name": "B", "blocks": {}}, {"name": "C", "blocks": {}}]},
+                "not valid",
+            ),
+            (
+                {"snapshots": [{"name": "", "blocks": {}}, {"name": "B", "blocks": {}}, {"name": "C", "blocks": {}}]},
+                "non-empty 'name'",
+            ),
+        ],
+    )
+    def test_an_answer_that_cannot_be_applied_is_rejected(
+        self, monkeypatch, dataset_path, answer, message
+    ):
+        catalog = ModelCatalog(dataset_path)
+        _install_fake_ollama(monkeypatch, chain=self.CHAIN, snapshots=answer)
+
+        with pytest.raises(LLMGenerationError, match=message):
+            generate_chain_from_prompt(prompt="rock", catalog=catalog, llm_model="fake-model")
+
+    def test_a_rejected_answer_is_re_asked_once(self, monkeypatch, dataset_path):
+        catalog = ModelCatalog(dataset_path)
+        attempts: list[str] = []
+
+        def answer(llm_request: LLMRequest) -> dict[str, Any]:
+            attempts.append(llm_request.prompt)
+            if len(attempts) == 1:
+                return {"snapshots": [{"name": "Only", "blocks": {}}]}
+            return _default_snapshots()
+
+        _install_fake_ollama(monkeypatch, chain=self.CHAIN, snapshots=answer)
+
+        chain = generate_chain_from_prompt(
+            prompt="rock", catalog=catalog, llm_model="fake-model"
+        )
+
+        assert len(attempts) == 2
+        assert "Your previous answer was rejected" in attempts[1]
+        assert [snapshot["name"] for snapshot in chain["snapshots"]] == ["Snap 1", "Snap 2", "Snap 3"]

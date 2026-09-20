@@ -180,7 +180,38 @@ rebuilt by writes - has no entry to clone, so that measured shape stands in.
 ### Snapshots
 
 `preset[10][10]`: `@name` at key `4` (NUL-terminated), `@tempo` at `5`, `@valid` at
-`0`, and a block's per-snapshot state at `3[slot][1]`.
+`0`, and a block's per-snapshot state at `3[slot][1]`. The snapshot the preset opens
+on is the snapshot group's key `6`. The device stores no "custom name" flag: a
+snapshot is named or it is not.
+
+### Snapshot-controlled parameters
+
+On/off states alone make every snapshot the same tone with blocks muted. What makes
+a snapshot a *sound* is that it recalls its own knob positions, and those are held in
+two places at once:
+
+- **The assignment** lives in `preset[4]`, a list indexed by **controller source** -
+  1 and 2 are the expression pedals, **9 is Snapshots**. Each entry is
+  `{0: id, 1: {0: source, 2: min, 3: max, 5: block slot, 6: {28: sub-model,
+  29: parameter ordinal}, 7: sub-model}}`, with the parameter ordinal in the same
+  `Helix.sym` index space a set-value uses, and the sub-model selector picking a
+  fused cab exactly as it does there. `1: 4` and `13: false` are constant across all
+  349 assignments read off a pedal.
+- **The values** live in each snapshot's key `2`: 64 entries of
+  `[fs_enabled, id, value]`, indexed by the **assignment id**, which is one pool
+  shared by every source. An unused entry is `[false, 64, nil]`; stale entries from a
+  deleted assignment keep an old value and an id of 13 or 64, and the device treats
+  both as unused.
+
+A value has to carry the parameter's own type, as everywhere else on this wire. The
+`.hlx` does not say which type that is, and here there is nothing to probe against -
+a document is written whole. The **document read back after the edits** settles it:
+it holds the block's own value at that ordinal in the device's type, so the range and
+every snapshot value are converted to match it.
+
+Assignments the donor held are dropped before the tone's own are written, for the
+same reason a footswitch binding is: an assignment names its target by **slot**, so
+one left behind drives whatever block the new tone put in that slot.
 
 ### Encoding
 
@@ -240,6 +271,9 @@ HX Edit's four reference files, for the record:
 | `@fs_label` / `@fs_ledcolor` / `@fs_enabled` | `11 → 5` (NUL-terminated) / `11 → 6` / `11 → 7` |
 | `snapshotN.@name` / `@tempo` / `@valid` | snapshot keys `4` / `5` / `0` |
 | `snapshotN.blocks.dspN.<name>` | snapshot key `3[wire slot][1]` |
+| `global.@current_snapshot` | snapshot group key `6` |
+| `controller.dspN.blockM.<param>` | an assignment in `preset[4][9]` |
+| `snapshotN.controllers.….<param>.@value` | snapshot key `2[assignment id][2]` |
 | `global.@topologyN` | DSP group key `21` |
 
 Two counter-intuitive points, both load-bearing:
@@ -452,6 +486,16 @@ type. String enums (`Ratio: "2:1"`) have no wire form of their own and resolve
 through the catalog's `reverse_map`. Anything still unresolvable is reported rather
 than guessed.
 
+**The assignment count at `preset[10][8]` is load-bearing.** The snapshot group's
+key `8` is how many controller assignments the preset holds, across every source; it
+matches the count in `preset[4]` on all 126 presets on a real pedal. Leaving it at
+`0` produces a preset that looks entirely correct and is not - HX Edit draws the
+brackets that mark a parameter as snapshot-controlled, the assignments read back
+intact, and the pedal still recalls the same knob positions in every snapshot. The
+failure is **visible only in HX Edit**, by switching snapshots and watching a value
+that should change and does not. No error, no refusal, and nothing in the read-back
+to compare against but another preset.
+
 **`op 41`'s key 59 is *enabled*, not *bypassed*.** The op is called "bypass"
 throughout the prior art, and the capture behind it is a bypass press sending
 `59: true` then `59: false`, which says nothing about polarity. Measured against a
@@ -510,8 +554,14 @@ documented shape, so the suite needs no proprietary data and no hardware.
 
 ---
 
-## 8. Not implemented
+## 8. Not implemented, and not yet confirmed
 
+- **That setting `preset[10][8]` makes the pedal recall snapshot values.** The
+  uploaded preset carries the right count (6 of 6 read back), but the pedal was
+  disconnected before HX Edit could be reopened on it. Repeat the check the same
+  way: push a tone with snapshot values to a scratch slot, quit and reopen HX Edit
+  (it holds the USB interface), load the preset from flash, and switch snapshots
+  watching a controlled value.
 - **Reading a device document back to `.hlx`.** Only the forward direction is built,
   which is all `push` needs.
 - **Input/output nodes and routing.** `split`, `join` and `inputA` are left to

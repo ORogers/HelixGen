@@ -1,0 +1,41 @@
+{
+  "meta": {
+    "name": "Three Snapshot Rock",
+    "author": "helixgen"
+  },
+  "blocks": [
+    {"model": "LA Studio Comp", "parameters": {"PeakReduction": 0.4, "Mix": 0.6}},
+    {"model": "Minotaur", "parameters": {"Gain": 0.3, "Tone": 0.55, "Level": 0.6}},
+    {"model": "Brit Plexi Brt", "parameters": {"Drive": 0.45, "ChVol": 0.7, "Master": 0.8}},
+    "4x12 Greenback 25",
+    {"model": "Transistor Tape", "parameters": {"Mix": 0.2, "Feedback": 0.3}},
+    {"model": "Glitz", "parameters": {"Mix": 0.2, "Decay": 0.4}}
+  ],
+  "snapshots": [
+    {
+      "name": "Clean",
+      "blocks": {
+        "1": {"enabled": false},
+        "2": {"parameters": {"Drive": 0.2, "ChVol": 0.8}},
+        "4": {"enabled": false}
+      }
+    },
+    {
+      "name": "Rhythm",
+      "blocks": {
+        "0": {"enabled": false},
+        "4": {"enabled": false}
+      }
+    },
+    {
+      "name": "Solo",
+      "blocks": {
+        "0": {"enabled": false},
+        "1": {"parameters": {"Gain": 0.5, "Level": 0.75}},
+        "2": {"parameters": {"Drive": 0.6}},
+        "4": {"parameters": {"Mix": 0.3}},
+        "5": {"parameters": {"Mix": 0.3}}
+      }
+    }
+  ]
+}

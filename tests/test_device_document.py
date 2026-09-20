@@ -14,11 +14,16 @@ import msgpack
 import pytest
 
 from helixgen.device.document import (
+    CONTROLLER_SNAPSHOT,
     KEY_CONTENT,
+    KEY_CONTROLLER_COUNT,
+    KEY_CONTROLLER_GROUP,
+    KEY_CURRENT_SNAPSHOT,
     KEY_ENABLED,
     KEY_MODEL_INDEX,
     KEY_MODEL_REF,
     KEY_SLOT_ARRAY,
+    KEY_SNAPSHOT_GROUP,
     KEY_TAG,
     KEY_VALUES,
     KEY_VECTOR,
@@ -85,11 +90,26 @@ def _footswitch(block_slot: int, label: str) -> list:
 
 
 def _snapshot(name: str) -> dict:
+    controllers = [[False, 64, None] for _ in range(64)]
+    # The donor's expression-pedal assignment (id 0) keeps a value per snapshot.
+    controllers[0] = [False, 0, 0.5]
     return {
         0: True,
+        2: controllers,
         3: [[None, True] for _ in range(20)],
         4: name.encode() + b"\x00",
         5: 120.0,
+    }
+
+
+def _exp_assignment() -> dict:
+    """An EXP 1 assignment as the device stores it, left over from the donor."""
+    return {
+        0: 0,
+        1: {
+            0: 1, 1: 4, 2: 0.0, 3: 1.0, 4: 0, 5: 1,
+            6: {28: 0, 29: 0, 41: False}, 7: 0, 13: False,
+        },
     }
 
 
@@ -105,9 +125,15 @@ def _preset(*, footswitches: bool = True) -> dict:
                 else [None] * 5
             ),
         },
+        4: [None, [_exp_assignment()]] + [None] * 8,
         5: {i: i for i in range(6)},
         7: {35: 0x03800000},
-        10: {10: [_snapshot("SNAPSHOT 1"), _snapshot("SNAPSHOT 2")], 13: [True] * 20},
+        10: {
+            6: 1,
+            8: 1,
+            10: [_snapshot("SNAPSHOT 1"), _snapshot("SNAPSHOT 2")],
+            13: [True] * 20,
+        },
     }
 
 
@@ -137,7 +163,7 @@ class TestParse:
         doc = parse(_document())
         assert doc.magic == MAGIC
         assert doc.header_len == HEADER_LEN
-        assert sorted(doc.preset) == [0, 1, 3, 5, 7, 10]
+        assert sorted(doc.preset) == [0, 1, 3, 4, 5, 7, 10]
 
     def test_a_fragment_without_the_magic_is_rejected(self):
         """A stream reassembled without its first page looks exactly like this.
@@ -366,3 +392,75 @@ class TestSnapshots:
         again = parse(dump(doc))
         assert again.snapshots()[1][4] == b"Chorus\x00"
         assert again.snapshots()[1][5] == pytest.approx(140.0)
+
+
+class TestControllers:
+    def test_clear_drops_every_assignment_and_value(self):
+        doc = parse(_document())
+        doc.clear_controllers()
+
+        assert doc.preset[KEY_CONTROLLER_GROUP] == [None] * 10
+        for snapshot in doc.snapshots():
+            assert all(entry == [False, 64, None] for entry in snapshot[2])
+        assert doc.preset[KEY_SNAPSHOT_GROUP][KEY_CONTROLLER_COUNT] == 0
+
+    def test_snapshot_assignment_has_the_device_shape(self):
+        doc = parse(_document())
+        doc.clear_controllers()
+        assigned = doc.add_snapshot_controller(
+            slot=2, parameter=5, model_sel=0, minimum=0.0, maximum=1.0, values=[0.2, 0.8]
+        )
+
+        assert assigned == 0
+        (assignment,) = doc.controller_assignments(CONTROLLER_SNAPSHOT)
+        assert assignment == {
+            0: 0,
+            1: {
+                0: CONTROLLER_SNAPSHOT, 1: 4, 2: 0.0, 3: 1.0, 4: 0, 5: 2,
+                6: {28: 0, 29: 5, 41: False}, 7: 0, 13: False,
+            },
+        }
+        assert [s[2][0] for s in doc.snapshots()] == [[False, 0, 0.2], [False, 0, 0.8]]
+
+    def test_count_tracks_assignments(self):
+        """With the count left at 0 the device shows assignments but never recalls them."""
+        doc = parse(_document())
+        doc.clear_controllers()
+        for parameter in range(3):
+            doc.add_snapshot_controller(
+                slot=1, parameter=parameter, model_sel=0,
+                minimum=0.0, maximum=1.0, values=[0.1, 0.9],
+            )
+        assert doc.preset[KEY_SNAPSHOT_GROUP][KEY_CONTROLLER_COUNT] == 3
+
+    def test_ids_skip_ones_other_sources_hold(self):
+        """Ids are one pool across sources; the donor's EXP assignment owns id 0."""
+        doc = parse(_document())
+        assigned = doc.add_snapshot_controller(
+            slot=2, parameter=0, model_sel=0, minimum=0.0, maximum=1.0, values=[0.3, 0.4]
+        )
+        assert assigned == 1
+        assert doc.snapshots()[0][2][0] == [False, 0, 0.5]
+        assert doc.preset[KEY_SNAPSHOT_GROUP][KEY_CONTROLLER_COUNT] == 2
+
+    def test_a_value_per_snapshot_is_required(self):
+        with pytest.raises(DocumentError):
+            parse(_document()).add_snapshot_controller(
+                slot=1, parameter=0, model_sel=0, minimum=0.0, maximum=1.0, values=[0.1]
+            )
+
+    def test_current_snapshot(self):
+        doc = parse(_document())
+        assert doc.set_current_snapshot(0)
+        assert doc.preset[KEY_SNAPSHOT_GROUP][KEY_CURRENT_SNAPSHOT] == 0
+        assert not doc.set_current_snapshot(5)
+
+    def test_survives_a_round_trip(self):
+        doc = parse(_document())
+        doc.clear_controllers()
+        doc.add_snapshot_controller(
+            slot=2, parameter=3, model_sel=1, minimum=False, maximum=True, values=[True, False]
+        )
+        again = parse(dump(doc))
+        assert again.controller_assignments(CONTROLLER_SNAPSHOT)[0][1][7] == 1
+        assert [s[2][0][2] for s in again.snapshots()] == [True, False]
