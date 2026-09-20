@@ -1,24 +1,40 @@
-"""A small JSON file for the few things worth remembering between runs.
+"""A small JSON file for the things worth remembering between runs.
 
-Deliberately not a settings system. It holds facts the program discovered and
-should not have to discover again -- today, only where HX Edit is installed.
-Anything a user tunes per run stays an argument.
+Deliberately not a settings system with layers and precedence. It holds what a
+person set once and should not have to set again: where HX Edit was found, the
+backend they chose, and their OpenAI key.
 
-Every read and write is forgiving: a missing, unreadable or corrupt file means
-"nothing remembered", and a failed write is dropped. Losing a cached path costs
-one rediscovery, which is never worth failing an upload over.
+Every read is forgiving. A missing, unreadable or corrupt file means "nothing
+remembered", because losing a cached path costs one rediscovery and that is
+never worth failing an upload over.
+
+**It can hold an API key**, so the file is created `rw-------` and every write
+re-asserts that. A key on disk in plain text is still a key on disk: anything
+running as this user can read it. That is the same exposure as the `.env` file
+the CLI already reads, and the trade for an app a person can set up without
+opening a terminal.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import stat
 import sys
 import tempfile
 from pathlib import Path
 from typing import Any
 
-__all__ = ["config_path", "read_setting", "write_setting"]
+__all__ = [
+    "config_path",
+    "read_setting",
+    "read_settings",
+    "write_setting",
+    "write_settings",
+]
+
+#: Owner read/write only. This file can contain an API key.
+_FILE_MODE = stat.S_IRUSR | stat.S_IWUSR
 
 
 def config_path() -> Path:
@@ -33,7 +49,8 @@ def config_path() -> Path:
     return root / "helixpy" / "config.json"
 
 
-def _read_all() -> dict[str, Any]:
+def read_settings() -> dict[str, Any]:
+    """Everything remembered, or an empty mapping."""
     path = config_path()
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
@@ -43,21 +60,28 @@ def _read_all() -> dict[str, Any]:
 
 
 def read_setting(key: str) -> Any:
-    return _read_all().get(key)
+    return read_settings().get(key)
 
 
 def write_setting(key: str, value: Any) -> None:
-    """Set one key, or remove it when ``value`` is ``None``.
+    """Set one key, or remove it when ``value`` is ``None``."""
+    write_settings({key: value})
 
-    Written through a temporary file in the same directory and renamed into
-    place, so an interrupted write cannot leave a half-written config behind
-    for the next run to choke on.
+
+def write_settings(values: dict[str, Any]) -> None:
+    """Merge ``values`` in, removing any whose value is ``None``.
+
+    Written to a temporary file in the same directory and renamed into place,
+    so an interrupted write cannot leave a half-written config behind for the
+    next run to choke on - and so the key never exists on disk under a
+    world-readable mode, even briefly.
     """
-    data = _read_all()
-    if value is None:
-        data.pop(key, None)
-    else:
-        data[key] = value
+    data = read_settings()
+    for key, value in values.items():
+        if value is None:
+            data.pop(key, None)
+        else:
+            data[key] = value
 
     path = config_path()
     try:
@@ -68,6 +92,9 @@ def write_setting(key: str, value: Any) -> None:
             json.dump(data, handle, indent=2)
             handle.write("\n")
             temporary = Path(handle.name)
+        # NamedTemporaryFile is already 0600; set it explicitly so the mode is
+        # a stated property of this file rather than a detail of tempfile.
+        temporary.chmod(_FILE_MODE)
         temporary.replace(path)
     except OSError:
         return

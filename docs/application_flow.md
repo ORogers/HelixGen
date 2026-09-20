@@ -10,8 +10,9 @@ what a slot read would otherwise pay for twice — but it calls the same functio
 never the CLI, and never a subprocess.
 
 There is one persistent piece of state in either: `hlxgen/config.py`, a small JSON
-file remembering where HX Edit was found. Everything else is an argument or a file
-path.
+file holding what a person set once and should not have to set again - where HX Edit
+was found, the desktop app's settings, and the OpenAI key. Everything else is an
+argument or a file path.
 
 ## Data inputs
 
@@ -103,8 +104,8 @@ blocks, then one to set every block's parameters. Both go through the same
 ```mermaid
 flowchart TD
     start["hlxgen describe '&lt;tone request&gt;' --llm-backend …"] --> pick{{"_build_llm_caller(backend)"}}
-    pick -- "'ollama' (default)" --> ol["POST /api/generate · stream=false<br>format = response schema (not for gpt-oss)<br>think = level · options.num_ctx · keep_alive 30m"]
-    pick -- "'openai'" --> oa["client.responses.create(model, input,<br>reasoning.effort, strict json_schema)<br>OPENAI_API_KEY from env, else a .env scan"]
+    pick -- "'openai' (default)" --> oa["client.responses.create(model, input,<br>reasoning.effort, strict json_schema)<br>key: environment → .env → config file"]
+    pick -- "'ollama'" --> ol["POST /api/generate · stream=false<br>format = response schema (not for gpt-oss)<br>think = level · options.num_ctx · keep_alive 30m"]
 
     ol --> closure["call_llm(LLMRequest: prompt + schema) → str"]
     oa --> closure
@@ -249,16 +250,18 @@ calls and hands back a typed `GenerationResult`.
 
 ```mermaid
 flowchart TD
-    win["MainWindow"] --> panels["SlotPanel · PromptPanel · GenerationPanel<br>PreviewPanel · UploadPanel · SettingsPage"]
+    win["MainWindow"] --> panels["SlotPanel · PromptPanel · GenerationPanel<br>PreviewPanel · UploadPanel · SettingsPage · SetupPage"]
     panels --> workers["hlxgen_ui/workers.py — one QThread per blocking job"]
 
     workers --> gw["GenerationWorker → generation.generate_tone()<br>the section 2–4 spine, unchanged"]
+    workers --> kw["ApiKeyTestWorker → verify_openai_api_key()<br>lists models: the cheapest authenticated call"]
     workers --> dw["DeviceScanWorker → find_device()<br>enumeration only; sends the pedal nothing"]
     workers --> sw["SlotReadWorker · SlotChainWorker → read_slots / read_slot_chain"]
     workers --> uw["UsbUploadWorker → push_preset → apply_tone (section 5a)"]
     workers --> aw["ScriptUploadWorker → the AppleScript fallback"]
 
     gw --> ui["Qt signals back to the UI thread"]
+    kw --> ui
     dw --> ui
     sw --> ui
     uw --> ui
@@ -282,7 +285,17 @@ Three things about it are not obvious from the signatures:
   the Upload button is disabled and says why, and auto-upload declines rather than
   failing inside the worker.
 
-Settings are in-memory only and are not yet persisted between runs.
+Settings are written to `hlxgen/config.py`'s file on every change, so a choice made
+once survives a restart. Each field is validated on its own type when read back, so
+an outdated config costs the one setting it got wrong rather than resetting
+everything.
+
+**First run.** OpenAI is the default backend and it needs a key. With no key and no
+backend chosen, `MainWindow` opens on `SetupPage` instead of the workspace: what the
+two backends cost, how to make a key, a field to paste it into, and a "Use Ollama
+instead" button that records that choice so the page does not return. Pressing
+Generate without a key routes there too, rather than spending a round trip to fail
+on a key that was never set.
 
 ## The read-only commands
 
@@ -329,7 +342,14 @@ only `--identify` opens a session. `pull` and `backup` read slots without writin
   labelled `Off`, then the first entry in the forward map.
 - **The OpenAI client is a module-level singleton.** `_OPENAI_CLIENT` is built on
   first use and reused for the rest of the process, so the key is resolved once per
-  run.
+  run. `store_openai_api_key` drops it, because a key changed in a running app
+  would otherwise be ignored until the next launch.
+- **The API key has three sources, most specific first**: `OPENAI_API_KEY` in the
+  environment, a `.env` file found by walking up from the working directory, then
+  `hlxgen/config.py`'s file. The environment winning is what lets a shell override a
+  saved key for one run; the config file is what lets an app launched from the Dock,
+  with no environment at all, have a key in the first place. It is stored in plain
+  text in a file created `rw-------`.
 - **Cab blocks are never parameterised by the model.** Any model whose category
   contains "cab" keeps its dataset defaults; their controls (and the IR slot lists)
   rarely carry the tone request.

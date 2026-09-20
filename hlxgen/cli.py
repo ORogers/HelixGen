@@ -16,6 +16,7 @@ from .generator import generate_preset
 from .inspector import inspect_preset, render_table
 from .io import load_chain_spec, load_json_file
 from .llm import (
+    DEFAULT_BACKEND,
     DEFAULT_NUM_CTX,
     DEFAULT_OLLAMA_ENDPOINT,
     DEFAULT_OLLAMA_MODEL,
@@ -370,8 +371,8 @@ def _add_llm_backend_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--llm-backend",
         choices=("ollama", "openai"),
-        default="ollama",
-        help="Select which LLM provider to use (default: ollama)",
+        default=DEFAULT_BACKEND,
+        help=f"Select which LLM provider to use (default: {DEFAULT_BACKEND})",
     )
     parser.add_argument(
         "--ollama-endpoint",

@@ -34,6 +34,16 @@ OPENAI_MODELS: tuple[tuple[str, str], ...] = (
 )
 DEFAULT_OPENAI_MODEL = "gpt-5.6-terra"
 
+#: Which backend is used when nothing says otherwise. OpenAI produces better
+#: chains and answers in seconds rather than tens of seconds, which is most of
+#: the difference between a tool someone iterates with and one they wait on.
+#: Ollama remains a first-class choice for working offline, for free, or for
+#: keeping prompts on your own machine.
+DEFAULT_BACKEND = "openai"
+
+#: Where the config file keeps the key set through the desktop app.
+OPENAI_API_KEY_SETTING = "openai_api_key"
+
 #: Thinking levels, least to most. Every offered OpenAI model supports all of them;
 #: Ollama models support a subset (see `supported_reasoning_efforts`).
 REASONING_EFFORTS: tuple[str, ...] = ("none", "low", "medium", "high", "xhigh", "max")
@@ -785,17 +795,89 @@ def _get_openai_client() -> Any:
     return _OPENAI_CLIENT
 
 
+def openai_api_key() -> str | None:
+    """The key to use, or ``None`` if there is not one anywhere.
+
+    Three sources, most specific first. The environment wins so that a shell
+    can override a stored key for one run without editing anything, `.env`
+    keeps working for people who already set it up that way, and the config
+    file is what the desktop app writes - an app launched from the Dock has no
+    shell environment to inherit a key from, so without it the OpenAI backend
+    could only ever be set up from a terminal.
+    """
+    from hlxgen.config import read_setting
+
+    for candidate in (
+        os.getenv("OPENAI_API_KEY"),
+        _load_dotenv_value("OPENAI_API_KEY"),
+        read_setting(OPENAI_API_KEY_SETTING),
+    ):
+        if isinstance(candidate, str) and candidate.strip():
+            return candidate.strip()
+    return None
+
+
+def store_openai_api_key(key: str | None) -> None:
+    """Persist a key for later runs, or forget the stored one."""
+    from hlxgen.config import write_setting
+
+    cleaned = key.strip() if isinstance(key, str) else None
+    write_setting(OPENAI_API_KEY_SETTING, cleaned or None)
+    # The client is a per-process singleton holding whatever key it was built
+    # with, so changing the key in a running app has to drop it - otherwise the
+    # next generation quietly uses the key the user just replaced.
+    reset_openai_client()
+
+
+def reset_openai_client() -> None:
+    global _OPENAI_CLIENT
+    _OPENAI_CLIENT = None
+
+
+def verify_openai_api_key(key: str) -> None:
+    """Check a key is accepted, without spending a generation on finding out.
+
+    Lists models, which is the cheapest authenticated call there is. Raises
+    :class:`LLMGenerationError` with whatever the API said, so the UI can show
+    the real reason - an expired key and a key with a typo in it fail very
+    differently, and "it didn't work" helps with neither.
+    """
+    cleaned = key.strip()
+    if not cleaned:
+        raise LLMGenerationError("Enter a key first.")
+    try:
+        from openai import OpenAI
+    except ImportError as exc:  # pragma: no cover - dependency guard
+        raise LLMGenerationError(
+            "The 'openai' package is not installed."
+        ) from exc
+    try:
+        OpenAI(api_key=cleaned).models.list()
+    except Exception as exc:  # the API's own message is the point
+        raise LLMGenerationError(_readable_openai_error(exc)) from exc
+
+
+def _readable_openai_error(exc: Exception) -> str:
+    """The part of an OpenAI exception worth showing someone."""
+    status = getattr(exc, "status_code", None)
+    if status == 401:
+        return "That key was rejected. Check you copied all of it."
+    if status == 429:
+        return "That key is out of quota, or rate limited."
+    message = str(exc).strip()
+    return message or exc.__class__.__name__
+
+
 def _ensure_openai_api_key() -> str:
-    existing = os.getenv("OPENAI_API_KEY")
-    if existing:
-        return existing
-    loaded = _load_dotenv_value("OPENAI_API_KEY")
-    if loaded:
-        os.environ.setdefault("OPENAI_API_KEY", loaded)
-        return loaded
-    raise LLMGenerationError(
-        "OpenAI backend selected but OPENAI_API_KEY was not found in the environment or .env file."
-    )
+    key = openai_api_key()
+    if key is None:
+        raise LLMGenerationError(
+            "No OpenAI API key. Set one in the desktop app under Settings, or "
+            "set OPENAI_API_KEY in your environment or a .env file. To generate "
+            "without a key, use --llm-backend ollama."
+        )
+    os.environ.setdefault("OPENAI_API_KEY", key)
+    return key
 
 
 def _load_dotenv_value(var_name: str) -> str | None:

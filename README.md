@@ -34,9 +34,10 @@ Applications, then **right-click it and choose Open** the first time.
 pipx install 'helixpy[usb]'   # plus: brew install libusb
 ```
 
-You will also need **HX Edit** installed to reach the pedal, and either
-**Ollama** running locally or an **OpenAI API key** to generate anything.
-[Full setup →](docs/guide.md#1-what-you-need)
+You will also need **HX Edit** installed to reach the pedal, and an
+**OpenAI API key** to generate anything - the app asks for one the first time
+it opens, and saves it. Prefer to stay offline? **Ollama** works too, free and
+locally. [Full setup →](docs/guide.md#1-what-you-need)
 
 ## Try it
 

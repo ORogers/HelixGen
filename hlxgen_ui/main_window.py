@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
 from hlxgen.cli import DEFAULT_DATASET
 from hlxgen.dataset import ModelCatalog
 from hlxgen.device import hxedit
+from hlxgen.llm import openai_api_key
 
 from .device import chain_from_preset
 from .generation import GenerationOptions, GenerationResult
@@ -35,6 +36,7 @@ from .widgets import (
     PreviewPanel,
     PromptPanel,
     SettingsPage,
+    SetupPage,
     SlotPanel,
     UploadPanel,
 )
@@ -58,7 +60,7 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(980, 620)
 
         self._dataset_path = dataset_path
-        self._settings = Settings()
+        self._settings = Settings.load()
         self._catalog: ModelCatalog | None = None
         self._last_result: GenerationResult | None = None
         self._selected_slot: int | None = None
@@ -116,9 +118,13 @@ class MainWindow(QMainWindow):
         )
         self.upload_panel.set_hx_edit_available(hxedit.find_hx_edit() is not None)
 
+        self.setup_page = SetupPage()
+        self.setup_page.completed.connect(self._on_setup_complete)
+
         self._pages = QStackedWidget()
         self._pages.addWidget(workspace)
         self._pages.addWidget(self.settings_page)
+        self._pages.addWidget(self.setup_page)
 
         self._settings_button = QPushButton("Settings")
         self._settings_button.clicked.connect(self._toggle_settings)
@@ -143,18 +149,42 @@ class MainWindow(QMainWindow):
         # themselves stays behind Refresh.
         self._scan_for_device()
 
+        if self._needs_setup():
+            self._show_setup()
+
     # -- pages ---------------------------------------------------------
 
+    #: Page indices within the stack.
+    _WORKSPACE, _SETTINGS, _SETUP = 0, 1, 2
+
     def _toggle_settings(self) -> None:
-        if self._pages.currentIndex() == 0:
-            self._pages.setCurrentIndex(1)
+        if self._pages.currentIndex() != self._SETTINGS:
+            self._pages.setCurrentIndex(self._SETTINGS)
             self._settings_button.setText("Back")
         else:
             self._show_workspace()
 
     def _show_workspace(self) -> None:
-        self._pages.setCurrentIndex(0)
+        self._pages.setCurrentIndex(self._WORKSPACE)
         self._settings_button.setText("Settings")
+
+    def _needs_setup(self) -> bool:
+        """Whether this looks like a first run with nothing set up yet.
+
+        Only asked once: choosing Ollama on the setup page saves that choice,
+        so the page does not reappear for someone who deliberately declined to
+        enter a key.
+        """
+        return self._settings.backend == "openai" and openai_api_key() is None
+
+    def _show_setup(self) -> None:
+        self._pages.setCurrentIndex(self._SETUP)
+        self._settings_button.setText("Skip")
+
+    def _on_setup_complete(self, backend: str) -> None:
+        self._settings.backend = backend
+        self._settings.save()
+        self._show_workspace()
 
     # -- catalog (lazy - a missing/invalid dataset shouldn't block the whole
     #    window from opening, only preview rendering) -----------------------
@@ -273,6 +303,13 @@ class MainWindow(QMainWindow):
             return
         prompt = self.prompt_panel.prompt_text()
         if not prompt:
+            return
+        if self._needs_setup():
+            # Send them where the key goes rather than spending a round trip
+            # to fail on a missing one. The prompt they typed is still in the
+            # box when they come back.
+            self.generation_panel.add_step("An OpenAI key is needed first.")
+            self._show_setup()
             return
 
         options = GenerationOptions(

@@ -160,9 +160,7 @@ def test_usb_upload_needs_a_selected_slot(qtbot, isolated_cwd, monkeypatch):
     window = MainWindow()
     qtbot.addWidget(window)
 
-    window.prompt_panel._prompt_edit.setPlainText("warm bluesy crunch")
-    window._on_generate()
-    qtbot.waitUntil(lambda: window._last_result is not None, timeout=5000)
+    _generate(qtbot, window)
 
     # A preset exists but no slot is selected: USB upload must stay disabled,
     # because it would otherwise overwrite a slot nobody chose.
@@ -186,9 +184,7 @@ def test_usb_upload_sends_the_selected_slot(qtbot, isolated_cwd, monkeypatch):
 
     window = MainWindow()
     qtbot.addWidget(window)
-    window.prompt_panel._prompt_edit.setPlainText("warm bluesy crunch")
-    window._on_generate()
-    qtbot.waitUntil(lambda: window._last_result is not None, timeout=5000)
+    _generate(qtbot, window)
 
     window.slot_panel.slot_selected.emit(7)
     window.upload_panel.upload_requested.emit(TRANSPORT_USB, "auto")
@@ -206,9 +202,7 @@ def test_generate_flow_populates_preview_and_upload_panel(
     window = MainWindow()
     qtbot.addWidget(window)
 
-    window.prompt_panel._prompt_edit.setPlainText("warm bluesy crunch")
-    window._on_generate()
-    qtbot.waitUntil(lambda: window._last_result is not None, timeout=5000)
+    _generate(qtbot, window)
 
     assert window._last_result.output_path.exists()
     # The chain renders left to right as chips, one per block.
@@ -225,6 +219,7 @@ def test_generate_flow_reports_llm_failure(
     window = MainWindow()
     qtbot.addWidget(window)
 
+    window._settings.backend = "ollama"
     window.prompt_panel._prompt_edit.setPlainText("anything")
     window._on_generate()
     qtbot.waitUntil(
@@ -255,6 +250,7 @@ def test_close_while_a_worker_runs_does_not_tear_down_the_thread(
 
     window = MainWindow()
     qtbot.addWidget(window)
+    window._settings.backend = "ollama"
     window.prompt_panel._prompt_edit.setPlainText("slow one")
     window._on_generate()
     qtbot.waitUntil(lambda: window._generation_worker.isRunning(), timeout=2000)
@@ -272,6 +268,9 @@ def test_close_while_a_worker_runs_does_not_tear_down_the_thread(
 
 
 def _generate(qtbot, window, prompt: str = "warm bluesy crunch") -> None:
+    # OpenAI is the default backend; these tests stub an Ollama server, so they
+    # have to say so rather than inheriting whichever is default today.
+    window._settings.backend = "ollama"
     window.prompt_panel._prompt_edit.setPlainText(prompt)
     window._on_generate()
     qtbot.waitUntil(lambda: window._last_result is not None, timeout=5000)
@@ -348,11 +347,18 @@ def test_settings_page_drives_generation(qtbot):
     assert window._settings.slot_count == 32
 
 
-def _open_settings(qtbot, window) -> None:
+def _open_settings(qtbot, window, *, backend: str = "ollama") -> None:
+    """Open the settings page, on a chosen backend.
+
+    OpenAI is the default now, so a test about Ollama's fields has to select
+    Ollama rather than assume it.
+    """
     window.show()
     window._settings_button.click()
+    page = window.settings_page
+    page._backend_combo.setCurrentIndex(page._backend_combo.findData(backend))
     qtbot.waitUntil(
-        lambda: window.settings_page._ollama_model.count() == len(FAKE_OLLAMA_MODELS),
+        lambda: page._ollama_model.count() == len(FAKE_OLLAMA_MODELS),
         timeout=3000,
     )
 
@@ -382,6 +388,7 @@ def test_thinking_level_follows_what_the_model_supports(qtbot):
             if model.item(row).isEnabled()
         ]
 
+    assert window._settings.backend == "ollama"
     assert enabled_levels() == ["low", "medium", "high"]
     assert window._settings.reasoning_effort == "low"
 

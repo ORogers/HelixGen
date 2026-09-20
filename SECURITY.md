@@ -31,6 +31,21 @@ Out of scope:
   consequence of not redistributing Line 6's data files - see
   [docs/legal.md](docs/legal.md).
 
+## Where the API key is kept
+
+An OpenAI key set through the desktop app is written to the config file -
+`~/Library/Application Support/HelixPy/config.json` on macOS,
+`~/.config/helixpy/config.json` elsewhere - which is created `rw-------`.
+
+**It is stored in plain text.** Anything running as that user can read it, the
+same as the `.env` file the CLI has always read. That is the trade for an app
+that can be set up without a terminal. If that is not a trade you want to make,
+set `OPENAI_API_KEY` in your environment instead: it takes precedence over the
+stored key, and nothing is written to disk.
+
+Reports of the key reaching anywhere it should not - a log line, an error
+message, a crash report, the preset files themselves - are in scope and welcome.
+
 ## Hardware safety
 
 HelixPy writes to real hardware, so a bug here can cost someone their presets.

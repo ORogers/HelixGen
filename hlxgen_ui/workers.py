@@ -18,7 +18,12 @@ from pathlib import Path
 from PySide6.QtCore import QThread, Signal
 
 from hlxgen.dataset import ModelCatalogError
-from hlxgen.llm import LLMGenerationError, list_llm_models, supported_reasoning_efforts
+from hlxgen.llm import (
+    LLMGenerationError,
+    list_llm_models,
+    supported_reasoning_efforts,
+    verify_openai_api_key,
+)
 from hlxgen.validator import ValidationError
 
 from .device import (
@@ -106,6 +111,25 @@ class ModelListWorker(_Worker):
             self.failed.emit(str(exc))
             return
         self.succeeded.emit(models)
+
+
+class ApiKeyTestWorker(_Worker):
+    """Checks an OpenAI key is accepted. A network round trip, so off-thread."""
+
+    succeeded = Signal()
+    failed = Signal(str)
+
+    def __init__(self, key: str, parent=None) -> None:
+        super().__init__(parent)
+        self._key = key
+
+    def run(self) -> None:
+        try:
+            verify_openai_api_key(self._key)
+        except LLMGenerationError as exc:
+            self.failed.emit(str(exc))
+            return
+        self.succeeded.emit()
 
 
 class DeviceScanWorker(_Worker):

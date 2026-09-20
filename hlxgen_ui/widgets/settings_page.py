@@ -7,6 +7,7 @@ be half-applied.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from PySide6.QtCore import Qt, Signal
@@ -31,12 +32,14 @@ from hlxgen.llm import (
     OPENAI_MODELS,
     REASONING_EFFORTS,
     nearest_reasoning_effort,
+    openai_api_key,
+    store_openai_api_key,
     supported_reasoning_efforts,
 )
 
 from ..settings import BACKENDS, Settings
 from ..style import ElidedLabel, card_layout_margins, make_card
-from ..workers import ModelListWorker
+from ..workers import ApiKeyTestWorker, ModelListWorker
 
 #: How each thinking level reads in the UI.
 THINKING_LABELS = {
@@ -66,10 +69,14 @@ class SettingsPage(QWidget):
     #: disable the controls that cannot work without it.
     hx_edit_changed = Signal(object)
 
+    #: Emitted with whether a usable OpenAI key is now available.
+    api_key_changed = Signal(bool)
+
     def __init__(self, settings: Settings, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._settings = settings
         self._model_worker: ModelListWorker | None = None
+        self._key_worker: ApiKeyTestWorker | None = None
         self._models_listed = False
         #: Thinking levels per installed Ollama model, as the server reported them.
         self._ollama_levels: dict[str, tuple[str, ...]] = {}
@@ -81,7 +88,7 @@ class SettingsPage(QWidget):
         title = QLabel("Settings")
         title.setObjectName("panelTitle")
 
-        subtitle = QLabel("Applies to the next generation. Nothing is saved between runs yet.")
+        subtitle = QLabel("Applies to the next generation, and is remembered between runs.")
         subtitle.setObjectName("appSubtitle")
         subtitle.setWordWrap(True)
 
@@ -153,15 +160,37 @@ class SettingsPage(QWidget):
         )
         self._openai_model.currentIndexChanged.connect(self._on_model_changed)
 
+        self._api_key = QLineEdit()
+        self._api_key.setEchoMode(QLineEdit.EchoMode.Password)
+        self._api_key.setPlaceholderText("sk-...")
+        self._api_key.textEdited.connect(self._on_api_key_edited)
+
+        self._test_key = QPushButton("Save and test")
+        self._test_key.setToolTip("Check the key is accepted, then remember it")
+        self._test_key.clicked.connect(self._save_and_test_key)
+
+        key_row = QHBoxLayout()
+        key_row.setContentsMargins(0, 0, 0, 0)
+        key_row.setSpacing(8)
+        key_row.addWidget(self._api_key, stretch=1)
+        key_row.addWidget(self._test_key)
+
+        self._key_status = QLabel("")
+        self._key_status.setObjectName("fieldHint")
+        self._key_status.setWordWrap(True)
+
         openai_form = QWidget()
         openai_layout = QFormLayout(openai_form)
         openai_layout.setContentsMargins(0, 0, 0, 0)
         openai_layout.setSpacing(8)
         openai_layout.addRow("Model", self._openai_model)
+        openai_layout.addRow("API key", key_row)
+        openai_layout.addRow("", self._key_status)
 
+        # Added in BACKENDS order - the combo's index selects the page.
         self._backend_options = QStackedWidget()
-        self._backend_options.addWidget(ollama_form)
         self._backend_options.addWidget(openai_form)
+        self._backend_options.addWidget(ollama_form)
         self._show_backend_options(self._backend_combo.currentIndex())
 
         # -- Thinking level (both backends) --------------------------------
@@ -280,6 +309,80 @@ class SettingsPage(QWidget):
 
         self._update_thinking_levels()
         self._refresh_hx_edit_status()
+        self._refresh_key_status()
+
+    # -- OpenAI key -----------------------------------------------------
+
+    def _refresh_key_status(self) -> None:
+        """Say where the key in force came from, without showing it.
+
+        A key set in the environment beats a stored one, so somebody who has
+        both needs to be told which is actually in use - otherwise editing the
+        field here appears to do nothing.
+        """
+        if os.getenv("OPENAI_API_KEY"):
+            self._show_key_status(
+                "Using OPENAI_API_KEY from your environment, which takes "
+                "precedence over a key saved here.",
+                missing=False,
+            )
+            return
+        if openai_api_key():
+            self._show_key_status("A key is saved on this machine.", missing=False)
+            return
+        self._show_key_status(
+            "No key yet. Create one at platform.openai.com/api-keys, paste it "
+            "above, and press Save and test.",
+            missing=True,
+        )
+
+    def _show_key_status(self, message: str, *, missing: bool) -> None:
+        self._key_status.setText(message)
+        self._key_status.setProperty("missing", missing)
+        style = self._key_status.style()
+        style.unpolish(self._key_status)
+        style.polish(self._key_status)
+
+    def _on_api_key_edited(self, _text: str) -> None:
+        self._test_key.setEnabled(bool(self._api_key.text().strip()))
+
+    def _save_and_test_key(self) -> None:
+        """Store the key, then check the API accepts it.
+
+        Stored first so that a key which works but cannot be verified right now
+        - no network, say - is not lost because the check failed.
+        """
+        key = self._api_key.text().strip()
+        if not key:
+            store_openai_api_key(None)
+            self._api_key.clear()
+            self._refresh_key_status()
+            return
+        if self._key_worker is not None and self._key_worker.isRunning():
+            return
+
+        store_openai_api_key(key)
+        self._test_key.setEnabled(False)
+        self._show_key_status("Checking the key...", missing=False)
+
+        self._key_worker = ApiKeyTestWorker(key, self)
+        self._key_worker.succeeded.connect(self._on_key_accepted)
+        self._key_worker.failed.connect(self._on_key_rejected)
+        self._key_worker.finished.connect(lambda: setattr(self, "_key_worker", None))
+        self._key_worker.start()
+
+    def _on_key_accepted(self) -> None:
+        self._test_key.setEnabled(True)
+        # Cleared once it is saved: the field is for entering a key, not for
+        # storing one where it can be read off the screen.
+        self._api_key.clear()
+        self._show_key_status("Key accepted and saved.", missing=False)
+        self.api_key_changed.emit(True)
+
+    def _on_key_rejected(self, message: str) -> None:
+        self._test_key.setEnabled(True)
+        self._show_key_status(message, missing=True)
+        self.api_key_changed.emit(bool(openai_api_key()))
 
     # -- HX Edit --------------------------------------------------------
 
@@ -319,8 +422,9 @@ class SettingsPage(QWidget):
     def showEvent(self, event) -> None:
         super().showEvent(event)
         self._fit_to_style()
-        # HX Edit may have been installed since the window opened.
+        # Either may have changed since the window opened.
         self._refresh_hx_edit_status()
+        self._refresh_key_status()
         # Ask the server once, the first time the page is actually opened, so
         # starting the app never waits on (or needs) an Ollama server.
         if not self._models_listed:
@@ -471,3 +575,4 @@ class SettingsPage(QWidget):
         self._settings.openai_model = self._openai_model.currentData()
         self._settings.reasoning_effort = self._thinking.currentData()
         self._settings.slot_count = self._slot_count.value()
+        self._settings.save()

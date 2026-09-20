@@ -11,6 +11,21 @@ Global flags come before the command:
 | `--hx-edit PATH` | Your `HX Edit.app`, when it is somewhere the usual search misses. `HLXGEN_HX_EDIT` does the same thing for every run. |
 | `--version` | Print the installed version. |
 
+### The OpenAI key
+
+`describe` uses OpenAI unless told otherwise, and looks for a key in three
+places, most specific first:
+
+1. `OPENAI_API_KEY` in the environment.
+2. A `.env` file, in the working directory or any directory above it.
+3. The config file the desktop app writes - `~/Library/Application
+   Support/HelixPy/config.json` on macOS, `~/.config/helixpy/config.json`
+   elsewhere.
+
+So a key set up once in the app also works on the command line, and a shell
+variable overrides it for a single run. `--llm-backend ollama` needs no key at
+all.
+
 ---
 
 ## Making presets
@@ -19,8 +34,9 @@ Global flags come before the command:
 
 ```bash
 hlxgen describe "spacious worship clean"
-hlxgen describe "tight prog metal rhythm" --llm-backend openai --reasoning-effort medium
-hlxgen describe "70s funk clean" --upload --upload-via usb --slot 4
+hlxgen describe "tight prog metal rhythm" --reasoning-effort medium
+hlxgen describe "70s funk clean" --llm-backend ollama   # local, free, offline
+hlxgen describe "warm jazz comp" --upload --upload-via usb --slot 4
 ```
 
 Two model calls - blocks, then every parameter at once - and the result is
@@ -29,7 +45,7 @@ validated before anything is written. Without `--output` it lands in
 
 | Flag | Default | |
 | --- | --- | --- |
-| `--llm-backend {ollama,openai}` | `ollama` | Where the thinking happens. |
+| `--llm-backend {openai,ollama}` | `openai` | Where the thinking happens. |
 | `--ollama-model` | `gpt-oss:20b` | Any model `hlxgen llm-models` lists. |
 | `--ollama-endpoint` | `http://localhost:11434/api/generate` | |
 | `--num-ctx` | `32768` | Raised automatically if a prompt needs more. |

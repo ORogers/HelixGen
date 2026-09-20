@@ -22,11 +22,14 @@ pedal at all. Generating and inspecting presets works without it.
 
 **A language model**, one of:
 
-- **Ollama**, running on your own machine. Free, private, no account. Slower,
-  and the quality depends on the model you pull. This is the default.
-- **An OpenAI API key.** Faster and generally better, and you pay per tone.
+- **An OpenAI API key** - the default, and the one to start with. A tone takes
+  seconds and the chains are better. You pay OpenAI per tone; it is a fraction
+  of a penny each. The app walks you through this the first time it opens.
+- **Ollama**, running on your own machine. Free, offline, no account, and
+  nothing leaves your machine. Slower, and how good the result is depends on
+  the model you pull.
 
-You only need one. Start with Ollama if you would rather not spend anything.
+You only need one, and you can switch at any time under Settings.
 
 ---
 
@@ -50,7 +53,36 @@ pipx install helixpy
 `pipx install 'helixpy[usb]'` adds the USB stack, and needs libusb
 (`brew install libusb`). The `.dmg` carries its own copy.
 
-### Setting up Ollama
+### Setting up OpenAI
+
+The first time the app opens it asks for a key, with a link to where you make
+one. Paste it in and press **Save and continue**; it is checked against the API
+before you go any further.
+
+![The first-run setup screen](images/setup.png)
+
+To set or change one later: **Settings › API key**.
+
+The key is saved to a config file in your home directory, readable only by you:
+
+| | |
+| --- | --- |
+| macOS | `~/Library/Application Support/HelixPy/config.json` |
+| Linux | `~/.config/helixpy/config.json` |
+
+It is stored in plain text, the same as the `.env` file the CLI reads, so
+anything running as you can read it. Delete the `openai_api_key` entry, or
+clear the field in Settings, to remove it.
+
+For the command line, `OPENAI_API_KEY` in your environment or a `.env` file
+still works and takes precedence over the saved key - handy for using a
+different key for one run without changing anything.
+
+```bash
+export OPENAI_API_KEY=sk-...
+```
+
+### Setting up Ollama instead
 
 Skip this if you are using OpenAI.
 
@@ -64,19 +96,6 @@ ollama pull gpt-oss:20b
 wants about 16 GB of RAM. `ollama pull gpt-oss:120b` is better if your machine
 can hold it. `hlxgen llm-models` lists what you have installed and the thinking
 levels each one supports.
-
-### Setting up OpenAI
-
-Set `OPENAI_API_KEY` in your environment, or put it in a `.env` file in the
-directory you run from:
-
-```bash
-export OPENAI_API_KEY=sk-...
-```
-
-The desktop app reads the same environment, which means that today it only sees
-the key if you launch it from a shell that has one. A key field in Settings is
-on the list.
 
 ---
 
@@ -121,7 +140,7 @@ right, with the generated chain across the bottom.
 4. **Generate.** Two things happen, and the panel shows both. First the model
    picks the blocks; then a second call sets every parameter across the whole
    chain at once, so it can balance gain and levels rather than tuning each
-   block blind. Ten to sixty seconds on Ollama, less on OpenAI.
+   block blind. A few seconds on OpenAI, tens of seconds on Ollama.
 
 5. **Read the preview.** The chain appears in signal order, block by block.
    This is the point to notice that it gave you a high-gain amp for a jazz
@@ -175,15 +194,17 @@ Two things the model does not control:
 
 ## 6. Ollama or OpenAI
 
-| | Ollama | OpenAI |
+| | OpenAI *(default)* | Ollama |
 | --- | --- | --- |
-| Cost | Free | Per tone |
-| Speed | Tens of seconds | Faster |
-| Privacy | Nothing leaves your machine | Your prompt goes to OpenAI |
-| Quality | Depends on the model you pull | Generally better chains |
-| Setup | Install, pull a model | An API key |
+| Cost | A fraction of a penny per tone | Free |
+| Speed | Seconds | Tens of seconds |
+| Privacy | Your prompt goes to OpenAI | Nothing leaves your machine |
+| Quality | Generally better chains | Depends on the model you pull |
+| Setup | An API key | Install it, pull a model |
 
 Both are chosen in **Settings**, or with `--llm-backend` on the command line.
+Ollama is the one to use offline, on a metered connection, or when a prompt
+should not leave the building.
 
 **Thinking level** is the other lever. Higher means the model reasons longer
 before answering: slower, usually better. `low` is the default and is normally
@@ -207,6 +228,13 @@ itself is open, close it - both want the same interface.
 **The pedal's front panel stops responding.** A session was dropped without
 being closed. Power-cycle the pedal; nothing is lost. If you can reproduce it,
 that is worth [a device report](https://github.com/ORogers/HelixPy/issues/new/choose).
+
+**"That key was rejected."** The key was not accepted by OpenAI. Check the
+whole of it was copied - they are long, and a partial paste is the usual
+cause. It is saved anyway, so you can correct it under **Settings › API key**.
+
+**"No OpenAI API key" when generating.** Nothing is set. Add one under
+**Settings › API key**, or switch to Ollama.
 
 **"Couldn't list installed models" in Settings.** The Ollama server is not
 running. `ollama serve`.
