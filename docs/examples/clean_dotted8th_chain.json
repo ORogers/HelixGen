@@ -72,7 +72,7 @@
       "position": 4,
       "parameters": {
         "TempoSync1": "On",
-        "SyncSelect1": 7,
+        "SyncSelect1": "1/8 Dotted",
         "Time": 0.32,
         "Feedback": 0.45,
         "WowFlutter": 0.18,

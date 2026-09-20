@@ -3,7 +3,7 @@ import copy
 from dataclasses import dataclass, field
 from typing import Any
 
-from .dataset import ModelCatalog, ModelCatalogError, ModelDefinition
+from .dataset import CONTINUOUS, ModelCatalog, ModelCatalogError, ModelDefinition
 
 DEFAULT_APPLICATION = "HX Edit"
 DEFAULT_APP_VERSION = 58851328  # Matches HX Edit 3.70 numeric encoding
@@ -188,7 +188,7 @@ def generate_preset(
             definition = model.parameters[param_name]
             normalized_value = definition.normalize(value)
             block_payload[param_name] = normalized_value
-            if definition.value_type == 1:
+            if definition.value_type == CONTINUOUS:
                 original_number = None
                 with contextlib.suppress(TypeError, ValueError):
                     original_number = float(value)
