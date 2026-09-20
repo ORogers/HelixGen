@@ -163,6 +163,12 @@ hlxgen push clean.hlx --slot 4 --archive ~/helix-backup/slot4.msgpack
 
 **Overwrites the slot.** `--slot` is required and is never guessed.
 
+The chain goes over as surgical edits, then the footswitch layout and the three
+snapshots follow as a separate whole-document write - the device's edit
+operations do not carry either. Snapshot block states are remapped to the slots
+the blocks actually landed in, so a state bound to `dsp0.block2` reaches
+whichever slot that block ended up occupying.
+
 | Flag | |
 | --- | --- |
 | `--archive PATH` | Save what is there before replacing it. Worth the habit. |

@@ -60,8 +60,15 @@ same thing.
 - **Validation before anything is written**, structurally against a JSON schema
   and semantically against the catalog - every model real, every value in
   range. The same gate backs a standalone `hlxgen validate`.
+- **Snapshots that work on arrival.** A generated preset carries the pedal's
+  three snapshots with every block switched on in each, so they are usable the
+  moment it lands rather than empty. On upload the per-block states are
+  remapped to the slots the blocks actually ended up in and written separately,
+  because the device's edit operations do not carry them. All three snapshots
+  start identical - HelixPy does not yet write *different* ones, such as a lead
+  variant with more gain.
 - **Presets that import cleanly**, built from a known-good HX Stomp export so
-  snapshots, global parameters and device identifiers match what HX Edit
+  global parameters, routing and device identifiers match what HX Edit
   expects.
 - **`hlxgen inspect`** to read any `.hlx` file as an ordered signal chain, and
   `hlxgen models` to list the catalog, filtered by category.

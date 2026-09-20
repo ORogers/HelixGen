@@ -150,7 +150,7 @@ flowchart TD
     l4 --> payload["tone.dsp0.block0 … blockN"]
 
     payload --> fs["FOOTSWITCH ASSIGNMENT<br>an explicit block 'footswitch' index always wins<br>every remaining block queues for footswitches 1–3<br>distortion, modulation and delay go to the front of that queue<br>anything past switch 3 gets none"]
-    payload --> sn["SNAPSHOTS AND METADATA<br>every tone.snapshot* gets each blockN set true by setdefault<br>device · device_version · appversion via _coerce_numeric<br>ints, floats and 0x… hex accepted; other strings fall back to template<br>dsp1 and variax ride through from the template untouched"]
+    payload --> sn["SNAPSHOTS AND METADATA<br>the template's three snapshots ride through; each blockN is<br>set true in every one by setdefault, so all three start identical<br>device · device_version · appversion via _coerce_numeric<br>ints, floats and 0x… hex accepted; other strings fall back to template<br>dsp1 and variax ride through from the template untouched"]
 ```
 
 Only `dsp0` is ever rebuilt: a chain cannot currently place blocks on the second
@@ -208,12 +208,21 @@ flowchart TD
     plan --> clear["Slots the donor fills that the tone does not:<br>delete, so the result is the generated chain<br>and not a merge of two"]
     clear --> swap["Per block, in order:<br>swap the model — which resets that block to the<br>new model's defaults — then send the tone's values"]
     swap --> commit["Commit, then read back and compare<br>(--no-verify skips the comparison)"]
-    commit --> done(["EditReport → printed, or shown in the UI"])
+    commit --> layout["Second session: whole-document write for the<br>footswitch layout and the snapshots, which the<br>edit ops do not carry. Block states are remapped<br>through the slots the blocks actually landed in."]
+    layout --> done(["EditReport → printed, or shown in the UI"])
 ```
 
 Positions are assigned in chain order rather than taken from the tone's own
 `@position`: fusing a cab into its amp closes a gap, and leaving one would waste the
 slot the fusion just freed.
+
+The layout write is a second session on purpose: the edit run above has spent most of
+its frame budget, and this is another dozen frames on top of a full read. It is also
+the only write that is safe to send whole, because by that point no model is changing.
+Snapshot names, tempos and valid flags go back as the preset has them, while each
+snapshot's per-block on/off states are looked up through `placed` — a switch or a
+snapshot state bound to `dsp0.block2` has to reach whichever device slot that block
+actually occupies, and the two are independent on the wire.
 
 `--archive` writes the slot's current contents out before overwriting it. `hlxgen
 backup` and `hlxgen pull` are the read-only halves of the same transport.
