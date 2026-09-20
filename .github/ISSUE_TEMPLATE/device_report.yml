@@ -1,0 +1,49 @@
+name: Device report
+description: Something involving the pedal - an upload, a slot read, or a device we have not tried
+labels: [device]
+body:
+  - type: markdown
+    attributes:
+      value: >
+        HelixPy has only been verified on an HX Stomp. Reports from any other
+        device are genuinely useful, including ones that simply say it worked.
+
+  - type: input
+    id: device
+    attributes:
+      label: Device
+      placeholder: HX Stomp, HX Stomp XL, Helix Floor, Helix LT, HX Effects, POD Go...
+    validations:
+      required: true
+
+  - type: input
+    id: firmware
+    attributes:
+      label: Device firmware version
+    validations:
+      required: true
+
+  - type: input
+    id: hx-edit
+    attributes:
+      label: HX Edit version
+      description: HelixPy reads Helix.sym out of it, and that file changes between releases.
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: >
+        Which command or button, which slot, and what the pedal did. If the
+        front panel stopped responding, say so - that matters.
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: backup
+    attributes:
+      label: Before you go on
+      options:
+        - label: I had a backup of the affected slots (`hlxgen backup`)

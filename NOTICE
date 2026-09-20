@@ -1,0 +1,23 @@
+HelixPy
+Copyright 2025 Oliver Rogers
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+---
+
+Helix, HX, HX Stomp, HX Edit, Line 6 and POD are trademarks of Yamaha Guitar
+Group, Inc. / Line 6, Inc. This project is an independent work. It is not
+affiliated with, authorised by, endorsed by or sponsored by Line 6 or Yamaha
+Guitar Group, and no such relationship is claimed or implied. Those names are
+used only to identify the hardware and software this project interoperates
+with.
+
+This project is black-box interoperability work: it was built by observing
+traffic between hardware and software the author owns and is licensed to use.
+It contains no Line 6 source code, firmware, or SDK, and it does not
+redistribute Line 6's data files. Helix.sym, amp.models and their siblings are
+read from the user's own HX Edit installation at run time and are never copied
+into this repository or into a release.
+
+See docs/legal.md for the full statement, including the provenance of
+hlxgen/data/helix_model_information.json.

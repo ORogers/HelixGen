@@ -762,9 +762,12 @@ slot, survives a power cycle, and reads back correct.
   then look at the device.
 - **Never write straight after a `goto`.** Read between them.
 - **Back up before any write**, and archive the target slot before overwriting it.
-- **Do not commit Line 6 data.** `Helix.sym` and its siblings are gitignored. Note
-  that `helix_model_information.json` is committed and plainly derives from the same
-  source — a pre-existing question this work did not create, but one worth resolving.
+- **Do not commit Line 6 data.** `Helix.sym` and its siblings are gitignored, and are
+  read in place from the user's own HX Edit install. The one distributed file is
+  `hlxgen/data/helix_model_information.json`, the model catalog: a table of names,
+  ranges, defaults and option labels, carrying no code and no algorithms, without
+  which a preset cannot be addressed at all. That it ships is a deliberate decision,
+  set out in [`legal.md`](legal.md), not an oversight.
 - Claim **interface 0 only**. Leave the audio interface alone.
 
 ---

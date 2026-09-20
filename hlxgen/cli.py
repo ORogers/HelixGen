@@ -8,6 +8,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from . import __version__
 from .dataset import ModelCatalog, ModelCatalogError
 from .device import AuditReport, DeviceSymbols, SymbolsError, audit_catalog
 from .device.hxedit import HX_EDIT_ENV_VAR, find_hx_edit
@@ -59,6 +60,12 @@ def build_parser() -> argparse.ArgumentParser:
         type=_path,
         default=DEFAULT_DATASET,
         help="Path to a model catalog (default: the one bundled with hlxgen)",
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"hlxgen {__version__}",
+        help="Print the installed version and exit",
     )
     parser.add_argument(
         "--hx-edit",

@@ -1,0 +1,16 @@
+name: Feature request
+description: Something HelixPy should be able to do
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: The goal, rather than the feature - it often has a shorter route.
+    validations:
+      required: true
+
+  - type: textarea
+    id: idea
+    attributes:
+      label: What did you have in mind?
