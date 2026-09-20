@@ -24,7 +24,7 @@ distributed, and are read from the user's own HX Edit install — see
 
 | File | Loaded by | What it decides |
 | --- | --- | --- |
-| `helix_model_information.json` | `ModelCatalog` | Which models exist, their internal names, categories, and every parameter's type, range, default and enum map. Nothing else may name a model. |
+| `helix_model_information.json` | `ModelCatalog` | Which models exist, their internal names, categories, and every parameter's type, range, default and option map. Nothing else may name a model. **An option map is keyed by the number the device stores**, not by the option's position in HX Edit's display list - several lists do not start at zero. |
 | `HXTemplate.hlx` | `load_json_file` | The structural skeleton every generated preset is deep-copied from: `meta`, `tone.global`, `dsp0`, `dsp1`, `snapshot0–2`, `variax`, and the HX Stomp device IDs. |
 | `helix-preset.schema.json` | `PresetValidator` | The structural contract checked before any file is written — required `meta` keys, `tone.global.@tempo`, and `dsp0.inputA` / `outputA`. |
 | `Helix.sym` (in HX Edit) | `DeviceSymbols` | The array position of each model *is* its identity on the wire, and each variant's parameter order. Required by every device operation; located by `hlxgen/device/hxedit.py`. |
@@ -114,7 +114,7 @@ flowchart TD
     r1 --> parse["_parse_chain_response()<br>json.loads (fence/brace fallback) → catalog.get(name) per block"]
     parse -- "rejected" --> retry1["re-ask once with the reason appended"] --> parse
     parse -- "rejected twice" --> fail(["LLMGenerationError → exit 1"])
-    parse --> r2["ROUND 2 - all parameters in one call<br>cabs and blocks without non-@ parameters keep defaults<br>schema: block1…blockN → every parameter nullable,<br>numbers in range, options by label"]
+    parse --> r2["ROUND 2 - all parameters in one call<br>cabs and blocks without non-@ parameters keep defaults<br>schema: block1…blockN → every parameter nullable,<br>continuous values in range, options by label,<br>unlabelled discrete parameters as integers in the device's range"]
     r2 --> norm["_parse_parameters_response() → _normalize_parameters()<br>null = keep default · labels mapped to option numbers"]
     norm -- "rejected" --> retry2["re-ask once with the reason appended"] --> norm
     norm --> out["chain dict → the shared spine in section 1"]
@@ -346,6 +346,16 @@ only `--identify` opens a session. `pull` and `backup` read slots without writin
   as written, but it is also a candidate for the numeric `data.device` field;
   `_coerce_numeric` accepts ints, floats and `0x…` hex, and returns the template's
   value for anything else rather than raising.
+- **An option's label and its stored number are not the same thing.** The catalog's
+  option maps are keyed by the value the device stores, which is the parameter's own
+  `min` plus the option's position in HX Edit's display list - and several lists do
+  not start at zero. A delay's note sync runs 1..19, so the dotted eighth at display
+  position 7 is stored as 8; 7 is the quarter triplet. Nothing complains about the
+  wrong one, because it is still a valid option, which is why this was only found by
+  checking 32 HX Edit-written presets.
+- **A discrete parameter with no labels is validated against its range** rather than
+  passed through unchecked, and the LLM schema constrains it to an integer within
+  that range instead of any number.
 - **Enum defaults are guessed when the dataset omits one.**
   `ParameterDefinition.default_value()` prefers an option labelled `False`, then one
   labelled `Off`, then the first entry in the forward map.

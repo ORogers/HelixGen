@@ -76,6 +76,13 @@ The full form mirrors the preset structure, letting you set `meta`, `global`,
 omitted falls back to the template and the catalog's defaults. See
 [`docs/examples/`](examples/) for both.
 
+**Name an option, do not number it.** Write `"Note": "1/8 Dotted"`, not
+`"Note": 7`. The number a preset stores is the device's own, which is the
+parameter's `min` plus the option's position in HX Edit's list - and several
+lists do not start at zero, so a positional guess lands on the wrong option
+without anything reporting a problem. A label is resolved through the catalog
+and cannot be wrong.
+
 Overrides: `--name`, `--author`, `--tempo`, `--device`, `--device-id`,
 `--device-version`, `--app-version`, `--template`, `--output`, `--dry-run`.
 
