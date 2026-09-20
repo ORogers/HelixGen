@@ -16,8 +16,6 @@
 - [usb_protocol.md](usb_protocol.md) - how the device support works: the USB
   transport, the preset document format, the name-to-ordinal mapping, how a
   preset is written, and the safety rules.
-- [helixgen_functional_requirements.md](helixgen_functional_requirements.md) - the
-  original functional requirements.
 - [examples/](examples/) - chain specifications in both supported formats.
 
 **Everything else**
