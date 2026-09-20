@@ -9,7 +9,7 @@ is the only unit this has been verified on.
 Python 3.13 or newer.
 
 ```bash
-git clone https://github.com/ORogers/HelixPy.git
+git clone https://github.com/ORogers/HelixGen.git
 cd HelixGen
 python3 -m venv .venv && source .venv/bin/activate
 python3 -m pip install -e '.[dev]'

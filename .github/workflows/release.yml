@@ -147,7 +147,7 @@ jobs:
             **The app** - download the `.dmg`, drag HelixGen to Applications,
             then **right-click it and choose Open** the first time. It is not
             signed with an Apple Developer ID, so macOS asks; see
-            [docs/install.md](https://github.com/ORogers/HelixPy/blob/main/docs/install.md#why-macos-warns-you).
+            [docs/install.md](https://github.com/ORogers/HelixGen/blob/main/docs/install.md#why-macos-warns-you).
 
             **The command line** - `pipx install 'helixgen[usb]'`.
 

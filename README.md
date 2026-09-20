@@ -1,6 +1,6 @@
 # HelixGen
 
-[![CI](https://github.com/ORogers/HelixPy/actions/workflows/ci.yml/badge.svg)](https://github.com/ORogers/HelixPy/actions/workflows/ci.yml)
+[![CI](https://github.com/ORogers/HelixGen/actions/workflows/ci.yml/badge.svg)](https://github.com/ORogers/HelixGen/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
 **Describe a guitar tone in plain English. Get it on your Line 6 HX Stomp.**
@@ -85,7 +85,7 @@ same thing.
 Applications, then **right-click it and choose Open** the first time.
 ([Why?](docs/install.md#why-macos-warns-you))
 
-[releases]: https://github.com/ORogers/HelixPy/releases
+[releases]: https://github.com/ORogers/HelixGen/releases
 
 **The command line**
 
@@ -137,7 +137,7 @@ and reads back to confirm. [The full trace →](docs/application_flow.md)
 | **HX Stomp** | Verified. This is what it was built and tested against. |
 | Other Helix / HX devices | Untested. The protocol should be the same, but nobody has confirmed it. |
 
-If you have another unit, [a device report](https://github.com/ORogers/HelixPy/issues/new/choose)
+If you have another unit, [a device report](https://github.com/ORogers/HelixGen/issues/new/choose)
 is genuinely useful - including one that just says it worked.
 
 ## Documentation
