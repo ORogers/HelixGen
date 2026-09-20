@@ -38,7 +38,7 @@ usb = [
     "msgpack>=1.0.5",
 ]
 ui = [
-    "PySide6>=6.6",
+    "PySide6>=6.11.2",
     "helixgen[usb]",
 ]
 dev = [
