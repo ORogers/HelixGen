@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#23242b"/>
+      <stop offset="1" stop-color="#17181c"/>
+    </linearGradient>
+    <linearGradient id="stroke" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#a68dff"/>
+      <stop offset="1" stop-color="#7c5cff"/>
+    </linearGradient>
+  </defs>
+  <rect x="100.0" y="100.0" width="824" height="824" rx="185"
+        fill="url(#tile)"/>
+  <rect x="102.0" y="102.0" width="820" height="820"
+        rx="183" fill="none" stroke="#ffffff" stroke-opacity="0.06"
+        stroke-width="4"/>
+  <line x1="381" y1="400.0" x2="381" y2="624.0" stroke="#7c5cff" stroke-opacity="0.45" stroke-width="20" stroke-linecap="round"/><line x1="643" y1="400.0" x2="643" y2="624.0" stroke="#7c5cff" stroke-opacity="0.45" stroke-width="20" stroke-linecap="round"/>
+  <path d="M 250 362.0 C 344.32 362.0, 417.68 662.0, 512.0 662.0 C 606.3199999999999 662.0, 679.6800000000001 362.0, 774 362.0" fill="none" stroke="url(#stroke)" stroke-width="54"
+        stroke-linecap="round"/>
+  <path d="M 250 662.0 C 344.32 662.0, 417.68 362.0, 512.0 362.0 C 606.3199999999999 362.0, 679.6800000000001 662.0, 774 662.0" fill="none" stroke="url(#stroke)" stroke-width="54"
+        stroke-linecap="round" stroke-opacity="0.75"/>
+  <circle cx="512" cy="512.0" r="34" fill="#a68dff"/>
+</svg>

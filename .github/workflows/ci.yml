@@ -81,8 +81,9 @@ jobs:
           helixgen --help > /dev/null
           helixgen models --category Reverb | head -3
 
-      # Guards the acceptance criteria in docs/helixgen_functional_requirements.md:
-      # every bundled chain must generate a preset that passes validation.
+      # The standing guarantee: every bundled chain generates a preset that
+      # passes validation. A catalog or generator change that breaks one of
+      # them breaks it here rather than on someone's pedal.
       - name: Generate and validate every example chain
         run: |
           mkdir -p ci-out

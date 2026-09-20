@@ -70,14 +70,23 @@ notarisation go - it is two steps and three secrets, not a redesign.
 
 ### The icon
 
-`packaging/HelixGen.icns`, if present, becomes the app icon; the spec falls back
-to PyInstaller's default when it is missing. To make one from a 1024x1024 PNG:
+`packaging/HelixGen.icns` is the app icon, and the spec falls back to
+PyInstaller's default if it is ever missing. It is not a painted file: the mark
+is drawn by [`icon/make_icon.py`](icon/make_icon.py) and every size in the
+`.icns` is rendered from the vector rather than downsampled from one big
+raster, so the small ones stay sharp.
 
 ```bash
-mkdir HelixGen.iconset
-for size in 16 32 64 128 256 512; do
-  sips -z $size $size icon.png --out "HelixGen.iconset/icon_${size}x${size}.png"
-  sips -z $((size*2)) $((size*2)) icon.png --out "HelixGen.iconset/icon_${size}x${size}@2x.png"
-done
-iconutil -c icns HelixGen.iconset -o packaging/HelixGen.icns
+python3 packaging/icon/make_icon.py --icns --out packaging/HelixGen.icns \
+    --svg packaging/icon/helixgen.svg
 ```
+
+Other concepts are kept in that file - `--concept helix-woven`, `pick-helix`,
+`pick` - and any of them can be rendered on its own to look at:
+
+```bash
+python3 packaging/icon/make_icon.py --concept pick --out /tmp/pick.png --size 512
+```
+
+The size that decides an icon is 16px, which is what the Finder list view uses.
+Render the ladder and look at it before changing the mark.
