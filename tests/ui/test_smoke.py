@@ -496,3 +496,32 @@ def test_a_failed_slot_read_is_reported_in_the_preview(qtbot, monkeypatch):
     qtbot.waitUntil(
         lambda: "Could not read" in window.preview_panel._empty_label.text(), timeout=3000
     )
+
+
+def test_upload_is_refused_and_explained_without_hx_edit(qtbot, isolated_cwd, monkeypatch):
+    """No HX Edit, no upload - said up front, not raised mid-write.
+
+    Helix.sym lives inside HX Edit and is Line 6's to distribute, so a USB
+    write cannot address a model without a local install. This used to fail
+    inside the upload worker with whatever exception surfaced first.
+    """
+    from hlxgen.device import hxedit
+
+    monkeypatch.setattr(hxedit, "find_hx_edit", lambda explicit=None: None)
+    _stub_llm(monkeypatch)
+    pushed: list[int] = []
+    monkeypatch.setattr(
+        "hlxgen_ui.workers.push_preset",
+        lambda preset, *, slot, bank=0, dataset, on_progress=None: pushed.append(slot),
+    )
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.upload_panel.set_selected_slot(3)
+    _generate(qtbot, window)
+    qtbot.wait(300)
+
+    assert pushed == [], "a preset was written with no symbol table to address it"
+    assert not window.upload_panel._upload_button.isEnabled()
+    assert "HX Edit" in window.upload_panel._upload_button.toolTip()
+    assert "HX Edit" in window.upload_panel._status_label.text()

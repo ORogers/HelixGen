@@ -31,13 +31,8 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Final
 
-#: Where HX Edit keeps the amp definitions on macOS.
-AMP_MODEL_PATHS: Final = (
-    Path("/Applications/Line6/HX Edit.app/Contents/Resources/amp.models"),
-    Path("/Applications/HX Edit.app/Contents/Resources/amp.models"),
-)
+from hlxgen.device.hxedit import amp_models_path
 
 
 class AmpDataError(RuntimeError):
@@ -91,13 +86,9 @@ class AmpDefaults:
     @classmethod
     def load(cls, path: Path | None = None) -> AmpDefaults:
         """Read ``amp.models``, finding it in HX Edit if no path is given."""
-        if path is not None:
-            candidates = [Path(path)]
-        else:
-            candidates = [p for p in AMP_MODEL_PATHS if p.exists()]
-        for candidate in candidates:
-            if candidate.exists():
-                return cls.parse(candidate.read_bytes())
+        candidate = Path(path) if path is not None else amp_models_path()
+        if candidate is not None and candidate.exists():
+            return cls.parse(candidate.read_bytes())
         raise AmpDataError(
             "Could not find amp.models. It ships inside HX Edit and is not "
             "distributed with this project."

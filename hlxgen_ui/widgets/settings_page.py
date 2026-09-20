@@ -7,10 +7,13 @@ be half-applied.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QStandardItemModel
 from PySide6.QtWidgets import (
     QComboBox,
+    QFileDialog,
     QFormLayout,
     QHBoxLayout,
     QLabel,
@@ -23,6 +26,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from hlxgen.device import hxedit
 from hlxgen.llm import (
     OPENAI_MODELS,
     REASONING_EFFORTS,
@@ -31,7 +35,7 @@ from hlxgen.llm import (
 )
 
 from ..settings import BACKENDS, Settings
-from ..style import card_layout_margins, make_card
+from ..style import ElidedLabel, card_layout_margins, make_card
 from ..workers import ModelListWorker
 
 #: How each thinking level reads in the UI.
@@ -46,11 +50,21 @@ THINKING_LABELS = {
 
 _THINKING_HINT = "Lower is faster. Higher reasons longer before answering."
 
+#: Shown only when there is no install to read Helix.sym out of.
+_HX_EDIT_HINT = (
+    "Reading slots and uploading need HX Edit installed - it carries Helix.sym, "
+    "which is Line 6's to distribute, not ours. Generating still works without it."
+)
+
 
 class SettingsPage(QWidget):
     """A full page, not a dialog - it replaces the workspace while open."""
 
     closed = Signal()
+
+    #: Emitted when HX Edit is found or lost, so the workspace can enable or
+    #: disable the controls that cannot work without it.
+    hx_edit_changed = Signal(object)
 
     def __init__(self, settings: Settings, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -181,6 +195,28 @@ class SettingsPage(QWidget):
         )
         self._slot_count.valueChanged.connect(self._apply)
 
+        # Helix.sym lives inside HX Edit and is Line 6's to distribute, not
+        # ours, so the pedal cannot be addressed without a local install. Say
+        # where it was found, and let the user point at it when it was not.
+        self._hx_edit_status = ElidedLabel()
+        self._hx_edit_status.setObjectName("fieldHint")
+        self._locate_hx_edit = QPushButton("Locate\u2026")
+        self._locate_hx_edit.setToolTip("Choose your HX Edit.app")
+        self._locate_hx_edit.clicked.connect(self._choose_hx_edit)
+
+        hx_edit_row = QHBoxLayout()
+        hx_edit_row.setSpacing(8)
+        hx_edit_row.addWidget(self._hx_edit_status, 1)
+        hx_edit_row.addWidget(self._locate_hx_edit)
+
+        # The explanation wraps on its own line, the way the thinking hint
+        # does. Eliding it into the row above turned a sentence into
+        # "Not found. Ins...ts and upload."
+        self._hx_edit_hint = QLabel(_HX_EDIT_HINT)
+        self._hx_edit_hint.setObjectName("fieldHint")
+        self._hx_edit_hint.setWordWrap(True)
+        self._hx_edit_hint.hide()
+
         backend_form = QFormLayout()
         backend_form.setSpacing(8)
         backend_form.addRow("Backend", self._backend_combo)
@@ -188,6 +224,8 @@ class SettingsPage(QWidget):
         device_form = QFormLayout()
         device_form.setSpacing(8)
         device_form.addRow("Slots to read", self._slot_count)
+        device_form.addRow("HX Edit", hx_edit_row)
+        device_form.addRow("", self._hx_edit_hint)
 
         # Every form shares one label column width, so the fields line up
         # across the backend, model and thinking rows.
@@ -241,12 +279,48 @@ class SettingsPage(QWidget):
         outer.addStretch(1)
 
         self._update_thinking_levels()
+        self._refresh_hx_edit_status()
+
+    # -- HX Edit --------------------------------------------------------
+
+    def _refresh_hx_edit_status(self) -> None:
+        """Show where HX Edit was found, and tell the workspace either way."""
+        bundle = hxedit.find_hx_edit()
+        self._hx_edit_status.setText("Not found" if bundle is None else str(bundle))
+        self._hx_edit_hint.setVisible(bundle is None)
+        self._hx_edit_status.setProperty("missing", bundle is None)
+        # A dynamic property only changes the rendering after a re-polish.
+        self._hx_edit_status.style().unpolish(self._hx_edit_status)
+        self._hx_edit_status.style().polish(self._hx_edit_status)
+        self.hx_edit_changed.emit(bundle)
+
+    def _choose_hx_edit(self) -> None:
+        chosen = QFileDialog.getExistingDirectory(
+            self,
+            "Select HX Edit.app",
+            "/Applications",
+            QFileDialog.Option.ShowDirsOnly | QFileDialog.Option.DontResolveSymlinks,
+        )
+        if not chosen:
+            return
+        bundle = Path(chosen)
+        if hxedit.find_hx_edit(bundle) is None:
+            self._hx_edit_hint.setText(
+                f"{bundle.name} does not contain Helix.sym. Pick your HX Edit.app."
+            )
+            self._hx_edit_hint.show()
+            return
+        self._hx_edit_hint.setText(_HX_EDIT_HINT)
+        hxedit.remember_hx_edit(bundle)
+        self._refresh_hx_edit_status()
 
     # -- events ---------------------------------------------------------
 
     def showEvent(self, event) -> None:
         super().showEvent(event)
         self._fit_to_style()
+        # HX Edit may have been installed since the window opened.
+        self._refresh_hx_edit_status()
         # Ask the server once, the first time the page is actually opened, so
         # starting the app never waits on (or needs) an Ollama server.
         if not self._models_listed:

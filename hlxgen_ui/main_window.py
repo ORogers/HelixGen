@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
 
 from hlxgen.cli import DEFAULT_DATASET
 from hlxgen.dataset import ModelCatalog
+from hlxgen.device import hxedit
 
 from .device import chain_from_preset
 from .generation import GenerationOptions, GenerationResult
@@ -108,6 +109,12 @@ class MainWindow(QMainWindow):
 
         self.settings_page = SettingsPage(self._settings)
         self.settings_page.closed.connect(self._show_workspace)
+        # Helix.sym lives inside HX Edit, so no install means no upload. The
+        # settings page is what knows, and it re-checks every time it opens.
+        self.settings_page.hx_edit_changed.connect(
+            lambda bundle: self.upload_panel.set_hx_edit_available(bundle is not None)
+        )
+        self.upload_panel.set_hx_edit_available(hxedit.find_hx_edit() is not None)
 
         self._pages = QStackedWidget()
         self._pages.addWidget(workspace)
@@ -327,6 +334,11 @@ class MainWindow(QMainWindow):
         if not self.upload_panel.auto_upload_enabled():
             return
         if self.upload_panel.transport() != TRANSPORT_USB:
+            return
+        if not self.upload_panel.hx_edit_available():
+            self.upload_panel.set_progress(
+                "Generated, but HX Edit was not found - set it under Settings."
+            )
             return
         if self._selected_slot is None:
             self.upload_panel.set_progress(

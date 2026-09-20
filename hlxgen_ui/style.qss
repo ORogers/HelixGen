@@ -276,6 +276,13 @@ QLabel#fieldHint {
     font-size: 9pt;
 }
 
+/* A hint that reports something missing, not just explaining a field. Warm
+   amber rather than the failure red: nothing has gone wrong yet, but the
+   upload controls will not work until it is resolved. */
+QLabel#fieldHint[missing="true"] {
+    color: #d29922;
+}
+
 QComboBox:disabled {
     color: #6b6e76;
 }

@@ -10,35 +10,12 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from pathlib import Path
 
 from hlxgen.dataset import ModelCatalog
 from hlxgen.device.codec import overlay
 from hlxgen.device.document import dump, parse
+from hlxgen.device.hxedit import find_symbol_table
 from hlxgen.device.symbols import DeviceSymbols
-
-#: Where HX Edit keeps its symbol table on macOS. The installer has used both of
-#: these, so both are tried before asking the user for a path.
-SYMBOL_TABLE_PATHS = (
-    Path("/Applications/Line6/HX Edit.app/Contents/Resources/Helix.sym"),
-    Path("/Applications/HX Edit.app/Contents/Resources/Helix.sym"),
-)
-
-
-def find_symbol_table(explicit: Path | None = None) -> Path:
-    """Locate ``Helix.sym``, which is not distributed with this project."""
-    if explicit is not None:
-        if not explicit.exists():
-            raise FileNotFoundError(f"No symbol table at {explicit}")
-        return explicit
-    for candidate in SYMBOL_TABLE_PATHS:
-        if candidate.exists():
-            return candidate
-    raise FileNotFoundError(
-        "Could not find Helix.sym. It ships inside HX Edit and is not "
-        "distributed with this project. Point --symbols at your own copy:\n"
-        '    find "/Applications" -name Helix.sym'
-    )
 
 
 def _load_amp_defaults():

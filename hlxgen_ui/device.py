@@ -305,8 +305,8 @@ def push_preset(
         if on_progress is not None:
             on_progress(message)
 
-    from hlxgen.device.commands import find_symbol_table
     from hlxgen.device.editor import apply_tone
+    from hlxgen.device.hxedit import find_symbol_table
     from hlxgen.device.symbols import DeviceSymbols
 
     _report("Locating HX Edit's symbol table...")
@@ -475,7 +475,7 @@ class _NameResolver:
         if _SYMBOLS_CACHE:
             return _SYMBOLS_CACHE[0]
         try:
-            from hlxgen.device.commands import find_symbol_table
+            from hlxgen.device.hxedit import find_symbol_table
             from hlxgen.device.symbols import DeviceSymbols
 
             symbols = DeviceSymbols.load(find_symbol_table(None))

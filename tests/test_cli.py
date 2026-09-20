@@ -497,3 +497,28 @@ def test_cli_describe_reports_http_error(
     assert exit_code == 1
     assert "Ollama returned HTTP 404" in captured.err
     assert "/api/generate" in captured.err
+
+
+def test_hx_edit_flag_rejects_a_path_that_is_not_an_install(
+    tmp_path: Path, capsys: pytest.CaptureFixture
+) -> None:
+    """Told at the front door, not several layers down in a USB write."""
+    with pytest.raises(SystemExit) as excinfo:
+        cli.main(["--hx-edit", str(tmp_path), "models"])
+
+    assert excinfo.value.code == 2
+    assert "does not look like an HX Edit install" in capsys.readouterr().err
+
+
+def test_hx_edit_flag_points_the_discovery_at_a_chosen_install(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from hlxgen.device import hxedit
+
+    resources = tmp_path / "HX Edit.app" / "Contents" / "Resources"
+    resources.mkdir(parents=True)
+    (resources / "Helix.sym").write_text("[]", encoding="utf-8")
+    monkeypatch.delenv(hxedit.HX_EDIT_ENV_VAR, raising=False)
+
+    assert cli.main(["--hx-edit", str(tmp_path / "HX Edit.app"), "models"]) == 0
+    assert hxedit.find_hx_edit() == tmp_path / "HX Edit.app"

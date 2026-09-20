@@ -1,5 +1,6 @@
 import argparse
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -9,6 +10,7 @@ from typing import Any
 
 from .dataset import ModelCatalog, ModelCatalogError
 from .device import AuditReport, DeviceSymbols, SymbolsError, audit_catalog
+from .device.hxedit import HX_EDIT_ENV_VAR, find_hx_edit
 from .generator import generate_preset
 from .inspector import inspect_preset, render_table
 from .io import load_chain_spec, load_json_file
@@ -56,7 +58,17 @@ def build_parser() -> argparse.ArgumentParser:
         "--dataset",
         type=_path,
         default=DEFAULT_DATASET,
-        help="Path to helix_model_information.json (default: ./helix_model_information.json)",
+        help="Path to a model catalog (default: the one bundled with hlxgen)",
+    )
+    parser.add_argument(
+        "--hx-edit",
+        dest="hx_edit",
+        type=_path,
+        help=(
+            "Path to your HX Edit.app, for the Line 6 data files this project "
+            "does not distribute. Only needed when it is somewhere the usual "
+            "search misses."
+        ),
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -776,8 +788,8 @@ def _upload_via_usb(
     model -- exactly what a freshly generated preset does.
     """
     from .dataset import ModelCatalog
-    from .device.commands import find_symbol_table
     from .device.editor import apply_tone
+    from .device.hxedit import find_symbol_table
     from .device.symbols import DeviceSymbols
 
     preset = json.loads(Path(preset_path).read_text())
@@ -824,6 +836,14 @@ def _upload_via_script(
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    if getattr(args, "hx_edit", None) is not None:
+        # Applied to the environment rather than threaded through every
+        # command: the two files inside HX Edit are read from several layers
+        # down, and none of them should have to carry a path for the one run
+        # where the install is somewhere unusual.
+        if find_hx_edit(args.hx_edit) is None:
+            parser.error(f"{args.hx_edit} does not look like an HX Edit install")
+        os.environ[HX_EDIT_ENV_VAR] = str(args.hx_edit)
     try:
         if args.command == "generate":
             return run_generate(args)

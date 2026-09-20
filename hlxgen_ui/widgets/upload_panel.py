@@ -7,6 +7,10 @@ Two transports, matching what ``hlxgen`` itself offers:
   device panel, because it overwrites what is there.
 * **HX Edit** - the AppleScript automation, macOS only, which cannot target a
   slot itself ('auto' always overwrites slot 1).
+
+Both need a local HX Edit install: the AppleScript transport drives the app
+itself, and a USB write needs ``Helix.sym`` from inside it to address a model
+at all. Without one the panel says so up front rather than failing mid-upload.
 """
 
 from __future__ import annotations
@@ -42,6 +46,7 @@ class UploadPanel(QWidget):
 
         self._has_preset = False
         self._slot: int | None = None
+        self._hx_edit_available = True
 
         title = QLabel("Upload")
         title.setObjectName("panelTitle")
@@ -134,6 +139,14 @@ class UploadPanel(QWidget):
             self._target_label.setToolTip(str(output_path))
         self._sync_enabled()
 
+    def set_hx_edit_available(self, available: bool) -> None:
+        """Whether an HX Edit install was found, which both transports need."""
+        self._hx_edit_available = available
+        self._sync_enabled()
+
+    def hx_edit_available(self) -> bool:
+        return self._hx_edit_available
+
     def set_selected_slot(self, slot_index: int | None) -> None:
         self._slot = slot_index
         self._slot_label.setText(
@@ -176,6 +189,14 @@ class UploadPanel(QWidget):
         self._mode_label.setVisible(not usb)
         self._mode_combo.setVisible(not usb)
 
+        if not self._hx_edit_available:
+            self._upload_button.setEnabled(False)
+            self._upload_button.setToolTip(
+                "HX Edit was not found. Both transports need it - a USB write "
+                "reads Helix.sym from inside it. Install HX Edit, or point at "
+                "it under Settings > HX Edit."
+            )
+            return
         if not self._has_preset:
             self._upload_button.setEnabled(False)
             self._upload_button.setToolTip("Generate a tone first.")
