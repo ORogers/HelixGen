@@ -32,7 +32,7 @@ jobs:
 
       - run: python -m twine check dist/*
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: distributions
           path: dist/*
@@ -94,7 +94,7 @@ jobs:
           cd dmg
           shasum -a 256 ./*.dmg > SHA256SUMS
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: macos-app
           path: dmg/*
