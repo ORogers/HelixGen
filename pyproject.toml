@@ -44,7 +44,7 @@ ui = [
 dev = [
     "helixgen[ui]",
     "pytest>=7.4",
-    "pytest-qt>=4.4",
+    "pytest-qt>=4.5.0",
     # Pinned to match the rule set in ruff.toml, exactly as CI pins it; bump the
     # two together so a ruff release cannot fail the build on its own.
     "ruff==0.16.7",
