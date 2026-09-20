@@ -59,7 +59,8 @@ It carries no code, no algorithms, no audio processing, and nothing about *how*
 any model works. It is used solely to produce files the hardware can read.
 
 If you are a rights holder and consider any part of this file to be yours, open
-an issue and it will be taken seriously and addressed promptly.
+an issue or write to oliver.rogers101@gmail.com. It will be taken seriously and
+addressed promptly.
 
 ## Your own presets
 
