@@ -3,6 +3,8 @@ from pathlib import Path
 
 import pytest
 
+from hlxgen import resources
+
 
 @pytest.fixture(autouse=True)
 def _no_ollama_capability_probe(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -18,24 +20,18 @@ def _no_ollama_capability_probe(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(scope="session")
-def project_root() -> Path:
-    return Path(__file__).resolve().parent.parent
+def dataset_path() -> Path:
+    """The real model catalog, from wherever hlxgen is installed.
+
+    Resolved through ``hlxgen.resources`` rather than the repo root, so the
+    suite passes against an installed wheel exactly as it does in a clone.
+    """
+    return resources.dataset_path()
 
 
 @pytest.fixture(scope="session")
-def dataset_path(project_root: Path) -> Path:
-    path = project_root / "helix_model_information.json"
-    if not path.exists():
-        pytest.skip("helix_model_information.json not available")
-    return path
-
-
-@pytest.fixture(scope="session")
-def template_path(project_root: Path) -> Path:
-    path = project_root / "HXTemplate.hlx"
-    if not path.exists():
-        pytest.skip("HXTemplate.hlx not available")
-    return path
+def template_path() -> Path:
+    return resources.template_path()
 
 
 @pytest.fixture(scope="session")

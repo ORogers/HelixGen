@@ -33,7 +33,7 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
-          cache-dependency-path: requirements.txt
+          cache-dependency-path: pyproject.toml
 
       # PySide6 (Qt) needs a handful of shared libraries this base image
       # doesn't ship, even to run headless; pyusb needs libusb's runtime.
@@ -47,7 +47,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt
+          python -m pip install -e '.[dev]'
 
       - name: Run tests
         run: python -m pytest -q
@@ -62,12 +62,24 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
-          cache-dependency-path: requirements.txt
+          cache-dependency-path: pyproject.toml
 
-      - name: Install dependencies
+      # Installs the built package rather than the checkout, so the round trip
+      # below exercises exactly what a user gets from `pip install helixpy`.
+      - name: Install the package
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt
+          python -m pip install .
+
+      # The data files travel inside the package now, so nothing below passes a
+      # --dataset, --schema or --template. Running from a directory that is not
+      # the checkout is the point: it is what catches a path that silently
+      # resolved against the working directory.
+      - name: Generate and validate from outside the checkout
+        working-directory: ${{ runner.temp }}
+        run: |
+          hlxgen --help > /dev/null
+          hlxgen models --category Reverb | head -3
 
       # Guards the acceptance criteria in docs/hlxgen_functional_requirements.md:
       # every bundled chain must generate a preset that passes validation.
@@ -77,15 +89,13 @@ jobs:
           for chain in docs/examples/*.json; do
             preset="ci-out/$(basename "${chain%.json}").hlx"
             echo "::group::$chain"
-            python -m hlxgen generate "$chain" --output "$preset"
-            python -m hlxgen validate "$preset"
+            hlxgen generate "$chain" --output "$preset"
+            hlxgen validate "$preset"
             echo "::endgroup::"
           done
 
       - name: Exercise read-only commands
-        run: |
-          python -m hlxgen inspect ci-out/basic_chain.hlx
-          python -m hlxgen models --category Reverb
+        run: hlxgen inspect ci-out/basic_chain.hlx
 
   lint:
     name: lint
@@ -103,3 +113,38 @@ jobs:
 
       - name: Ruff
         run: python -m ruff check hlxgen/ hlxgen_ui/ tests/
+
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - run: python -m pip install build twine
+
+      # A wheel that is missing helix_model_information.json installs cleanly
+      # and then fails on first use, so check the data files are actually in it.
+      - name: Build and check the distributions
+        run: |
+          python -m build
+          python -m twine check dist/*
+          python - <<'EOF'
+          import pathlib, zipfile
+          wheel = next(pathlib.Path("dist").glob("*.whl"))
+          names = set(zipfile.ZipFile(wheel).namelist())
+          required = {
+              "hlxgen/data/helix_model_information.json",
+              "hlxgen/data/helix-preset.schema.json",
+              "hlxgen/data/HXTemplate.hlx",
+              "hlxgen/data/import_helix_preset.applescript",
+              "hlxgen_ui/style.qss",
+          }
+          missing = sorted(required - names)
+          if missing:
+              raise SystemExit(f"{wheel.name} is missing: {missing}")
+          print(f"{wheel.name} carries every data file")
+          EOF

@@ -9,7 +9,6 @@ DEFAULT_APPLICATION = "HX Edit"
 DEFAULT_APP_VERSION = 58851328  # Matches HX Edit 3.70 numeric encoding
 DEFAULT_DEVICE_ID = 2162694  # HX Stomp / HX Edit identifiers observed in reference presets
 DEFAULT_DEVICE_VERSION = 57671680  # HX Stomp firmware encoding (e.g. 3.60)
-DEFAULT_TEMPLATE = "HXTemplate.hlx"
 DEFAULT_FOOTSWITCH_LED = 13676288
 
 

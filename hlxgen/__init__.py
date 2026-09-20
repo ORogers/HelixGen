@@ -6,7 +6,21 @@ Helix preset files (.hlx). The CLI entry point is exposed via ``python -m hlxgen
 """
 
 __all__ = ["main"]
-__version__ = "0.1.0"
+
+
+def _installed_version() -> str:
+    """The version recorded by the installer, so pyproject.toml is the only
+    place it is written down. A source checkout that was never installed has no
+    metadata to read, which is not worth failing over."""
+    from importlib.metadata import PackageNotFoundError, version
+
+    try:
+        return version("helixpy")
+    except PackageNotFoundError:  # pragma: no cover - only in a bare checkout
+        return "0.0.0+unknown"
+
+
+__version__ = _installed_version()
 
 
 def main() -> None:

@@ -9,8 +9,8 @@ from typing import Any
 
 from .dataset import ModelCatalog, ModelCatalogError
 from .device import AuditReport, DeviceSymbols, SymbolsError, audit_catalog
-from .generator import DEFAULT_TEMPLATE, generate_preset
-from .inspector import inspect_preset
+from .generator import generate_preset
+from .inspector import inspect_preset, render_table
 from .io import load_chain_spec, load_json_file
 from .llm import (
     DEFAULT_NUM_CTX,
@@ -25,14 +25,22 @@ from .llm import (
     list_llm_models,
     supported_reasoning_efforts,
 )
+from .resources import (
+    dataset_path,
+    default_output_dir,
+    schema_path,
+    template_path,
+    upload_script_path,
+)
 from .validator import PresetValidator, ValidationError
 
-DEFAULT_DATASET = Path("helix_model_information.json")
-DEFAULT_SCHEMA = Path("helix-preset.schema.json")
-DEFAULT_TEMPLATE_PATH = Path(DEFAULT_TEMPLATE)
-PACKAGE_ROOT = Path(__file__).resolve().parent
-REPO_ROOT = PACKAGE_ROOT.parent
-DEFAULT_UPLOAD_SCRIPT = REPO_ROOT / "scripts" / "import_helix_preset.applescript"
+# Resolved from the package's own data directory rather than the working
+# directory, so an installed hlxgen works from anywhere. The matching --dataset,
+# --schema and --template flags still override any of them.
+DEFAULT_DATASET = dataset_path()
+DEFAULT_SCHEMA = schema_path()
+DEFAULT_TEMPLATE_PATH = template_path()
+DEFAULT_UPLOAD_SCRIPT = upload_script_path()
 
 
 def _path(path_like: str) -> Path:
@@ -323,7 +331,7 @@ def build_parser() -> argparse.ArgumentParser:
         type=_path,
         help=(
             "Path to the AppleScript automation used with --upload "
-            f"(default: {DEFAULT_UPLOAD_SCRIPT})"
+            "(defaults to the copy bundled with hlxgen)"
         ),
     )
     describe_parser.add_argument(
@@ -477,25 +485,7 @@ def run_models(args: argparse.Namespace) -> int:
         print("No models found.")
         return 0
 
-    headers = ("Model", "Internal ID", "Based On")
-    widths = [len(header) for header in headers]
-    for row in rows:
-        for idx, cell in enumerate(row):
-            widths[idx] = max(widths[idx], len(cell))
-
-    def format_row(row: tuple[str, str, str]) -> str:
-        return " │ ".join(cell.ljust(widths[idx]) for idx, cell in enumerate(row))
-
-    header_line = format_row(headers)
-    separator = "─┼─".join("─" * width for width in widths)
-    lines = [
-        f"┌{'┬'.join('─' * width for width in widths)}┐",
-        f"│{header_line}│",
-        f"├{separator}┤",
-    ]
-    lines.extend(f"│{format_row(row)}│" for row in rows)
-    lines.append(f"└{'┴'.join('─' * width for width in widths)}┘")
-    print("\n".join(lines))
+    print(render_table(("Model", "Internal ID", "Based On"), rows))
     return 0
 
 
@@ -703,7 +693,7 @@ def _default_describe_output(preset: dict[str, Any]) -> Path:
     else:
         name = "described preset"
     slug = _slugify(name)
-    return Path.cwd() / "generated-presets" / f"{slug}.hlx"
+    return default_output_dir() / f"{slug}.hlx"
 
 
 def _slugify(text: str) -> str:

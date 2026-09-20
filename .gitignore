@@ -23,6 +23,7 @@ build/
 # Generated Helix presets
 *.hlx
 !HXTemplate.hlx
+generated-presets/
 
 # Device backups pulled off a pedal (hlxgen pull/backup). Someone's presets,
 # and Line 6 data: never committed.

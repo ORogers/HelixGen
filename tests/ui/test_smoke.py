@@ -11,7 +11,6 @@ flaky and hardware-dependent, and a sweep walks someone's actual pedal.
 from __future__ import annotations
 
 import json
-import shutil
 from pathlib import Path
 
 import pytest
@@ -24,12 +23,14 @@ from hlxgen_ui.widgets.upload_panel import TRANSPORT_USB
 
 
 @pytest.fixture
-def project_dataset_files(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """Copy the files ModelCatalog/generate_preset need into an isolated cwd,
-    so tests don't depend on (or pollute) the repo root."""
-    project_root = Path(__file__).resolve().parent.parent.parent
-    for name in ("helix_model_information.json", "HXTemplate.hlx", "helix-preset.schema.json"):
-        shutil.copy(project_root / name, tmp_path / name)
+def isolated_cwd(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Run in an empty working directory.
+
+    The catalog, template and schema now travel inside ``hlxgen.data`` and are
+    found wherever the app runs from, so nothing has to be copied here. What
+    still matters is the working directory: a generated preset lands in
+    ``./generated-presets`` and would otherwise pollute the repo root.
+    """
     monkeypatch.chdir(tmp_path)
     return tmp_path
 
@@ -154,7 +155,7 @@ def test_refresh_lists_slots_and_names_them(qtbot, monkeypatch: pytest.MonkeyPat
     )
 
 
-def test_usb_upload_needs_a_selected_slot(qtbot, project_dataset_files, monkeypatch):
+def test_usb_upload_needs_a_selected_slot(qtbot, isolated_cwd, monkeypatch):
     _stub_llm(monkeypatch)
     window = MainWindow()
     qtbot.addWidget(window)
@@ -172,7 +173,7 @@ def test_usb_upload_needs_a_selected_slot(qtbot, project_dataset_files, monkeypa
     assert window.upload_panel._upload_button.isEnabled()
 
 
-def test_usb_upload_sends_the_selected_slot(qtbot, project_dataset_files, monkeypatch):
+def test_usb_upload_sends_the_selected_slot(qtbot, isolated_cwd, monkeypatch):
     _stub_llm(monkeypatch)
     seen: dict[str, object] = {}
 
@@ -198,7 +199,7 @@ def test_usb_upload_sends_the_selected_slot(qtbot, project_dataset_files, monkey
 
 
 def test_generate_flow_populates_preview_and_upload_panel(
-    qtbot, project_dataset_files: Path, monkeypatch: pytest.MonkeyPatch
+    qtbot, isolated_cwd: Path, monkeypatch: pytest.MonkeyPatch
 ):
     _stub_llm(monkeypatch)
 
@@ -215,7 +216,7 @@ def test_generate_flow_populates_preview_and_upload_panel(
 
 
 def test_generate_flow_reports_llm_failure(
-    qtbot, project_dataset_files: Path, monkeypatch: pytest.MonkeyPatch
+    qtbot, isolated_cwd: Path, monkeypatch: pytest.MonkeyPatch
 ):
     monkeypatch.setattr(
         "hlxgen.llm._call_ollama", lambda endpoint, model_name, llm_request, **_: "not json"
@@ -234,7 +235,7 @@ def test_generate_flow_reports_llm_failure(
 
 
 def test_close_while_a_worker_runs_does_not_tear_down_the_thread(
-    qtbot, project_dataset_files: Path, monkeypatch: pytest.MonkeyPatch
+    qtbot, isolated_cwd: Path, monkeypatch: pytest.MonkeyPatch
 ):
     """Regression: destroying a running QThread aborts the process.
 
@@ -276,7 +277,7 @@ def _generate(qtbot, window, prompt: str = "warm bluesy crunch") -> None:
     qtbot.waitUntil(lambda: window._last_result is not None, timeout=5000)
 
 
-def test_auto_upload_sends_to_the_selected_slot(qtbot, project_dataset_files, monkeypatch):
+def test_auto_upload_sends_to_the_selected_slot(qtbot, isolated_cwd, monkeypatch):
     """The whole point of the toggle: generate, and it lands on the pedal."""
     _stub_llm(monkeypatch)
     sent: dict[str, object] = {}
@@ -296,7 +297,7 @@ def test_auto_upload_sends_to_the_selected_slot(qtbot, project_dataset_files, mo
     qtbot.waitUntil(lambda: sent.get("slot") == 4, timeout=5000)
 
 
-def test_auto_upload_never_guesses_a_slot(qtbot, project_dataset_files, monkeypatch):
+def test_auto_upload_never_guesses_a_slot(qtbot, isolated_cwd, monkeypatch):
     """No slot selected means no write - an auto-upload must not pick one."""
     _stub_llm(monkeypatch)
     calls: list[int] = []
@@ -316,7 +317,7 @@ def test_auto_upload_never_guesses_a_slot(qtbot, project_dataset_files, monkeypa
     assert "Pick a slot" in window.upload_panel._status_label.text()
 
 
-def test_auto_upload_respects_the_toggle(qtbot, project_dataset_files, monkeypatch):
+def test_auto_upload_respects_the_toggle(qtbot, isolated_cwd, monkeypatch):
     _stub_llm(monkeypatch)
     calls: list[int] = []
     monkeypatch.setattr(
@@ -415,7 +416,7 @@ def test_openai_offers_only_the_gpt_5_6_models(qtbot):
     assert window._settings.openai_model == "gpt-5.6-luna"
 
 
-def test_thinking_level_and_context_reach_the_llm(qtbot, project_dataset_files, monkeypatch):
+def test_thinking_level_and_context_reach_the_llm(qtbot, isolated_cwd, monkeypatch):
     calls = _stub_llm(monkeypatch)
     window = MainWindow()
     qtbot.addWidget(window)

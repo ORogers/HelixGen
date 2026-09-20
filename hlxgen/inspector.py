@@ -1,6 +1,32 @@
+from collections.abc import Sequence
 from typing import Any
 
 from .dataset import ModelCatalog, ModelCatalogError
+
+
+def render_table(headers: Sequence[str], rows: Sequence[Sequence[str]]) -> str:
+    """A box-drawn table whose borders line up with its cells.
+
+    Shared by ``inspect`` and ``models`` rather than written twice: the second
+    copy had borders a join-width short of the rows they framed, so every
+    column rule sat two characters left of the one below it.
+    """
+    widths = [len(header) for header in headers]
+    for row in rows:
+        for idx, cell in enumerate(row):
+            widths[idx] = max(widths[idx], len(cell))
+
+    def format_row(row: Sequence[str]) -> str:
+        cells = (" " + cell.ljust(widths[idx]) + " " for idx, cell in enumerate(row))
+        return "│" + "│".join(cells) + "│"
+
+    def border(left: str, middle: str, right: str) -> str:
+        return left + middle.join("─" * (width + 2) for width in widths) + right
+
+    lines = [border("┌", "┬", "┐"), format_row(headers), border("├", "┼", "┤")]
+    lines.extend(format_row(row) for row in rows)
+    lines.append(border("└", "┴", "┘"))
+    return "\n".join(lines)
 
 
 def inspect_preset(preset: dict[str, Any], catalog: ModelCatalog) -> str:
@@ -37,33 +63,4 @@ def inspect_preset(preset: dict[str, Any], catalog: ModelCatalog) -> str:
     if not rows:
         rows.append(("-", "No blocks", "", ""))
 
-    headers = ("Pos", "Model (ID)", "Type", "Based On")
-    table_rows = [headers, *rows]
-
-    widths = [0, 0, 0, 0]
-    for row in table_rows:
-        for idx, cell in enumerate(row):
-            widths[idx] = max(widths[idx], len(cell))
-
-    def format_row(row: tuple[str, str, str, str]) -> str:
-        cells = []
-        for idx, cell in enumerate(row):
-            cells.append(" " + cell.ljust(widths[idx]) + " ")
-        return "│" + "│".join(cells) + "│"
-
-    def make_border(left: str, middle: str, right: str) -> str:
-        segments = ["─" * (width + 2) for width in widths]
-        return left + middle.join(segments) + right
-
-    header_line = format_row(headers)
-    separator = make_border("├", "┼", "┤")
-    body_lines = [format_row(row) for row in rows]
-
-    table_lines = [
-        make_border("┌", "┬", "┐"),
-        header_line,
-        separator,
-    ]
-    table_lines.extend(body_lines)
-    table_lines.append(make_border("└", "┴", "┘"))
-    return "\n".join(table_lines)
+    return render_table(("Pos", "Model (ID)", "Type", "Based On"), rows)
