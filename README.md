@@ -20,6 +20,60 @@ same thing.
 
 ---
 
+## Features
+
+**Generating tones**
+
+- **Plain-English prompts.** "Gilmour-ish lead - Big Muff into a clean Hiwatt,
+  long dotted-eighth delay" is a valid input. Reference records, rigs and the
+  sound you are after rather than block names.
+- **The whole catalog.** All 343 HX Stomp models across 13 categories, 310 of
+  them carrying the real amp or pedal they model, so a prompt naming a rig
+  lands on the right thing.
+- **Nothing invented.** Both model calls are constrained to a JSON schema built
+  from the catalog: only real model names, only in-range values, only listed
+  option labels. A rejected answer is re-asked once with the reason attached.
+- **Two backends.** OpenAI by default - seconds per tone, better chains, a
+  fraction of a penny each. Ollama for working offline and free, with nothing
+  leaving your machine. Both offer a thinking level to trade speed for quality.
+
+**Getting them onto the pedal**
+
+- **Direct USB upload** into a slot you choose, reading the slot back
+  afterwards to confirm the write landed.
+- **Browse your pedal** from the app: what each slot holds, and the signal
+  chain of any of them, read without loading the preset or moving the pedal's
+  own panel.
+- **Backups.** `hlxgen backup` copies all 126 slots and sends the pedal
+  nothing; `push --archive` saves the target slot before it is overwritten.
+- **Amps carry their own cab**, the way they do on the pedal, so a chain with
+  an amp and six effects still fits in eight blocks. `--separate-cabs` if you
+  would rather it did not.
+- **Footswitches assigned for you** - three blocks get switches 1-3, drive,
+  modulation and delay chosen first - and overridable per block.
+
+**Working with preset files**
+
+- **Hand-authored chains** in JSON or YAML, in a short form (a title and a list
+  of model names) or a full one that reaches every parameter, footswitch and
+  routing field.
+- **Validation before anything is written**, structurally against a JSON schema
+  and semantically against the catalog - every model real, every value in
+  range. The same gate backs a standalone `hlxgen validate`.
+- **Presets that import cleanly**, built from a known-good HX Stomp export so
+  snapshots, global parameters and device identifiers match what HX Edit
+  expects.
+- **`hlxgen inspect`** to read any `.hlx` file as an ordered signal chain, and
+  `hlxgen models` to list the catalog, filtered by category.
+
+**Both ways in**
+
+- **A desktop app** for the whole flow - pick a slot, describe, preview,
+  upload - with a first-run setup that takes your API key and remembers it.
+- **A command-line tool** covering the same flow, plus what the app has no
+  screen for: reading presets off the pedal, hand-authored chain files, and
+  auditing the catalog against your own HX Edit install.
+
 ## Install
 
 **The app** - download the `.dmg` from [Releases][releases], drag HelixPy to

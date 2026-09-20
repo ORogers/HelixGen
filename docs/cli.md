@@ -79,8 +79,9 @@ omitted falls back to the template and the catalog's defaults. See
 Overrides: `--name`, `--author`, `--tempo`, `--device`, `--device-id`,
 `--device-version`, `--app-version`, `--template`, `--output`, `--dry-run`.
 
-The first three blocks are assigned to footswitches 1-3 automatically, with
-drive, modulation and delay preferred; set `footswitch` on a block to override.
+Three blocks are assigned to footswitches 1-3 automatically - drive,
+modulation and delay first, then the rest in chain order; set `footswitch` on a
+block to override, and an explicit assignment always keeps its switch.
 
 ---
 
