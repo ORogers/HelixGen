@@ -53,7 +53,7 @@ from .workers import (
 class MainWindow(QMainWindow):
     def __init__(self, *, dataset_path: Path = DEFAULT_DATASET) -> None:
         super().__init__()
-        self.setWindowTitle("hlxgen")
+        self.setWindowTitle("HelixPy")
         self.resize(1320, 800)
         self.setMinimumSize(980, 620)
 
@@ -428,7 +428,7 @@ def _build_header(settings_button: QWidget) -> QWidget:
     text = QVBoxLayout()
     text.setSpacing(2)
 
-    title = QLabel("hlxgen")
+    title = QLabel("HelixPy")
     title.setObjectName("appTitle")
 
     subtitle = QLabel("Describe a tone, generate a Helix preset, send it to your pedal.")

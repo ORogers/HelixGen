@@ -11,7 +11,7 @@ from typing import Any
 from . import __version__
 from .dataset import ModelCatalog, ModelCatalogError
 from .device import AuditReport, DeviceSymbols, SymbolsError, audit_catalog
-from .device.hxedit import HX_EDIT_ENV_VAR, find_hx_edit
+from .device.hxedit import HX_EDIT_ENV_VAR, find_hx_edit, find_symbol_table
 from .generator import generate_preset
 from .inspector import inspect_preset, render_table
 from .io import load_chain_spec, load_json_file
@@ -166,10 +166,9 @@ def build_parser() -> argparse.ArgumentParser:
     audit_parser.add_argument(
         "--symbols",
         type=_path,
-        required=True,
         help=(
-            "Path to Helix.sym, copied from your own HX Edit installation. "
-            "It is not distributed with this project."
+            "Path to Helix.sym. Defaults to the copy inside your HX Edit "
+            "installation; it is not distributed with this project."
         ),
     )
     audit_parser.add_argument(
@@ -571,7 +570,7 @@ def run_describe(args: argparse.Namespace) -> int:
 
 def run_device_audit(args: argparse.Namespace) -> int:
     catalog = ModelCatalog(args.dataset)
-    symbols = DeviceSymbols.load(args.symbols)
+    symbols = DeviceSymbols.load(find_symbol_table(args.symbols))
     report = audit_catalog(catalog, symbols)
 
     print(_format_audit(report, limit=args.limit))
@@ -796,7 +795,6 @@ def _upload_via_usb(
     """
     from .dataset import ModelCatalog
     from .device.editor import apply_tone
-    from .device.hxedit import find_symbol_table
     from .device.symbols import DeviceSymbols
 
     preset = json.loads(Path(preset_path).read_text())

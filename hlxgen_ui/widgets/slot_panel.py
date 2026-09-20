@@ -62,7 +62,19 @@ class SlotPanel(QWidget):
         layout.addWidget(self._device_label)
         layout.addWidget(self._status_label)
         layout.addWidget(self._list, stretch=1)
+        layout.addStretch(1)
         layout.addWidget(self._refresh_button)
+        self._sync_list_visibility()
+
+    def _sync_list_visibility(self) -> None:
+        """Hide the list while it is empty.
+
+        An empty QListWidget still draws its frame, so before a Refresh the
+        panel showed a large blank box under the status line - which reads as
+        something failing to load rather than as nothing having been asked for
+        yet.
+        """
+        self._list.setVisible(self._list.count() > 0)
 
     # -- state transitions ---------------------------------------------
 
@@ -84,6 +96,7 @@ class SlotPanel(QWidget):
     def set_no_device(self, reason: str = "No device connected") -> None:
         """Nothing usable attached: clear the rows *and* the identity line."""
         self._list.clear()
+        self._sync_list_visibility()
         self._device_label.setText("Not connected")
         self._status_label.setText(reason)
         self._refresh_button.setEnabled(True)
@@ -110,6 +123,7 @@ class SlotPanel(QWidget):
             if not slot.populated:
                 item.setForeground(Qt.GlobalColor.gray)
             self._list.addItem(item)
+        self._sync_list_visibility()
 
     def selected_slot(self) -> int | None:
         items = self._list.selectedItems()

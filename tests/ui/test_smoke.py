@@ -91,7 +91,7 @@ def _stub_llm(
 def test_main_window_constructs_without_a_device(qtbot):
     window = MainWindow()
     qtbot.addWidget(window)
-    assert window.windowTitle() == "hlxgen"
+    assert window.windowTitle() == "HelixPy"
     qtbot.waitUntil(
         lambda: "No pedal found" in window.slot_panel._status_label.text(), timeout=2000
     )
