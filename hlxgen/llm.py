@@ -10,6 +10,7 @@ from typing import Any
 from urllib import error, request
 
 from .dataset import (
+    CONTINUOUS,
     ModelCatalog,
     ModelCatalogError,
     ModelDefinition,
@@ -1079,7 +1080,7 @@ def _render_block(key: str, model: ModelDefinition, summary: list[dict[str, Any]
     lines = [header + ")"]
     for entry in summary:
         line = f"- {entry['name']}: {entry['type']}"
-        if entry["type"] == "continuous":
+        if entry["type"] in ("continuous", "number") and entry.get("min") is not None:
             line += f" {_format_number(entry.get('min'))}..{_format_number(entry.get('max'))}"
         elif entry["type"] == "enum":
             line += " [" + ", ".join(entry.get("options", [])) + "]"
@@ -1119,7 +1120,7 @@ def _summarize_parameters(model: ModelDefinition) -> list[dict[str, Any]]:
         if default is not None:
             entry["default"] = default
 
-        if definition.value_type == 1:
+        if definition.value_type == CONTINUOUS:
             entry["type"] = "continuous"
             if definition.min_value is not None:
                 entry["min"] = definition.min_value
@@ -1140,7 +1141,13 @@ def _summarize_parameters(model: ModelDefinition) -> list[dict[str, Any]]:
             entry["options"] = options
             entry["option_values"] = option_values
         else:
+            # A stepped parameter the dataset has no labels for. It takes whole
+            # option numbers, so its range is what the model has to go on.
             entry["type"] = "number"
+            if definition.min_value is not None:
+                entry["min"] = definition.min_value
+            if definition.max_value is not None:
+                entry["max"] = definition.max_value
 
         summary.append(entry)
     return summary
@@ -1199,7 +1206,12 @@ def _parameter_schema(entry: dict[str, Any]) -> dict[str, Any]:
         return {"type": ["boolean", "null"]}
     if kind == "enum":
         return {"type": ["string", "null"], "enum": [*entry["options"], None]}
-    return {"type": ["number", "null"]}
+    schema = {"type": ["integer", "null"]}
+    if entry.get("min") is not None:
+        schema["minimum"] = entry["min"]
+    if entry.get("max") is not None:
+        schema["maximum"] = entry["max"]
+    return schema
 
 
 def _parse_parameters_response(
