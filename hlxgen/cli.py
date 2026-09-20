@@ -12,7 +12,19 @@ from .device import AuditReport, DeviceSymbols, SymbolsError, audit_catalog
 from .generator import DEFAULT_TEMPLATE, generate_preset
 from .inspector import inspect_preset
 from .io import load_chain_spec, load_json_file
-from .llm import LLMGenerationError, generate_chain_from_prompt
+from .llm import (
+    DEFAULT_NUM_CTX,
+    DEFAULT_OLLAMA_ENDPOINT,
+    DEFAULT_OLLAMA_MODEL,
+    DEFAULT_OPENAI_MODEL,
+    DEFAULT_REASONING_EFFORT,
+    OPENAI_MODELS,
+    REASONING_EFFORTS,
+    LLMGenerationError,
+    generate_chain_from_prompt,
+    list_llm_models,
+    supported_reasoning_efforts,
+)
 from .validator import PresetValidator, ValidationError
 
 DEFAULT_DATASET = Path("helix_model_information.json")
@@ -234,9 +246,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="Skip the read-back comparison after committing",
     )
 
+    llm_models_parser = subparsers.add_parser(
+        "llm-models",
+        help="List the LLMs describe can use, with their thinking levels",
+    )
+    _add_llm_backend_arguments(llm_models_parser)
+
     describe_parser = subparsers.add_parser(
         "describe",
-        help="Generate a preset by prompting a local Ollama model",
+        help="Generate a preset from a tone description using Ollama or OpenAI",
     )
     describe_parser.add_argument(
         "prompt",
@@ -245,26 +263,37 @@ def build_parser() -> argparse.ArgumentParser:
     describe_parser.add_argument(
         "--ollama-model",
         dest="ollama_model",
-        default="gpt-oss:20b",
-        help="Ollama model name to query (default: gpt-oss:20b)",
+        default=DEFAULT_OLLAMA_MODEL,
+        help=f"Ollama model name to query (default: {DEFAULT_OLLAMA_MODEL})",
     )
-    describe_parser.add_argument(
-        "--ollama-endpoint",
-        dest="ollama_endpoint",
-        default="http://localhost:11434/api/generate",
-        help="HTTP endpoint for the Ollama generate API",
-    )
-    describe_parser.add_argument(
-        "--llm-backend",
-        choices=("ollama", "openai"),
-        default="ollama",
-        help="Select which LLM provider to use (default: ollama)",
-    )
+    _add_llm_backend_arguments(describe_parser)
     describe_parser.add_argument(
         "--openai-model",
         dest="openai_model",
-        default="gpt-5-mini-2025-08-07",
-        help="OpenAI model used when --llm-backend openai is selected",
+        choices=[model_id for model_id, _ in OPENAI_MODELS],
+        default=DEFAULT_OPENAI_MODEL,
+        help=f"OpenAI model used with --llm-backend openai (default: {DEFAULT_OPENAI_MODEL})",
+    )
+    describe_parser.add_argument(
+        "--reasoning-effort",
+        dest="reasoning_effort",
+        choices=REASONING_EFFORTS,
+        default=DEFAULT_REASONING_EFFORT,
+        help=(
+            "How long the model thinks before answering. Lower is faster "
+            f"(default: {DEFAULT_REASONING_EFFORT}). Ollama models without a level "
+            "use the nearest one they support."
+        ),
+    )
+    describe_parser.add_argument(
+        "--num-ctx",
+        dest="num_ctx",
+        type=int,
+        default=DEFAULT_NUM_CTX,
+        help=(
+            f"Ollama context window in tokens (default: {DEFAULT_NUM_CTX}); raised "
+            "automatically if a prompt would not fit"
+        ),
     )
     describe_parser.add_argument(
         "--upload",
@@ -309,6 +338,21 @@ def build_parser() -> argparse.ArgumentParser:
     _add_generation_arguments(describe_parser)
 
     return parser
+
+
+def _add_llm_backend_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--llm-backend",
+        choices=("ollama", "openai"),
+        default="ollama",
+        help="Select which LLM provider to use (default: ollama)",
+    )
+    parser.add_argument(
+        "--ollama-endpoint",
+        dest="ollama_endpoint",
+        default=DEFAULT_OLLAMA_ENDPOINT,
+        help="HTTP endpoint for the Ollama generate API",
+    )
 
 
 def _add_generation_arguments(parser: argparse.ArgumentParser) -> None:
@@ -455,6 +499,32 @@ def run_models(args: argparse.Namespace) -> int:
     return 0
 
 
+def run_llm_models(args: argparse.Namespace) -> int:
+    backend = args.llm_backend
+    try:
+        models = list_llm_models(backend, args.ollama_endpoint)
+    except LLMGenerationError as exc:
+        print(f"LLM error: {exc}", file=sys.stderr)
+        return 1
+    if not models:
+        print("No models found.")
+        return 0
+
+    descriptions = dict(OPENAI_MODELS) if backend == "openai" else {}
+    default = DEFAULT_OPENAI_MODEL if backend == "openai" else DEFAULT_OLLAMA_MODEL
+    width = max(len(model) for model in models)
+    for model in models:
+        levels = ", ".join(
+            supported_reasoning_efforts(backend, model, args.ollama_endpoint)
+        ) or "not supported"
+        note = descriptions.get(model, "")
+        if model == default:
+            note = f"{note}, default" if note else "default"
+        suffix = f"  ({note})" if note else ""
+        print(f"{model.ljust(width)}  thinking: {levels}{suffix}")
+    return 0
+
+
 def run_describe(args: argparse.Namespace) -> int:
     catalog = ModelCatalog(args.dataset)
     template = load_json_file(args.template)
@@ -467,6 +537,8 @@ def run_describe(args: argparse.Namespace) -> int:
             endpoint=args.ollama_endpoint,
             backend=backend,
             openai_model=getattr(args, "openai_model", None),
+            reasoning_effort=args.reasoning_effort,
+            num_ctx=args.num_ctx,
         )
     except LLMGenerationError as exc:
         print(f"LLM error: {exc}", file=sys.stderr)
@@ -773,6 +845,8 @@ def main(argv: list[str] | None = None) -> int:
             return run_models(args)
         if args.command == "describe":
             return run_describe(args)
+        if args.command == "llm-models":
+            return run_llm_models(args)
         if args.command == "device-audit":
             return run_device_audit(args)
         if args.command in {"devices", "pull", "backup", "push"}:

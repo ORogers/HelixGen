@@ -41,7 +41,8 @@ python3 -m hlxgen --dataset helix_model_information.json validate FullRainbowCle
 python3 -m hlxgen --dataset helix_model_information.json models --category Distortion
 python3 -m hlxgen inspect FullRainbowClean.hlx --dataset helix_model_information.json
 python3 -m hlxgen --dataset helix_model_information.json describe "spacious worship clean" --schema helix-preset.schema.json
-python3 -m hlxgen describe "tight prog metal rhythm" --llm-backend openai --openai-model gpt-4o-mini
+python3 -m hlxgen describe "tight prog metal rhythm" --llm-backend openai --openai-model gpt-5.6-terra --reasoning-effort low
+python3 -m hlxgen llm-models --llm-backend ollama
 ```
 
 - `generate` expects a chain definition with an ordered `blocks` list. Optional overrides (`--name`, `--author`, `--tempo`, `--device`, `--device-id`, `--device-version`, `--app-version`, `--template`, `--output`, `--dry-run`) adjust metadata and output behavior. Defaults mirror HX Stomp numeric IDs so the resulting preset imports cleanly in HX Edit/HX Stomp.
@@ -103,19 +104,19 @@ Both formats can be expressed as JSON or YAML. During generation, simple strings
 
 ### Describe Command & LLM Prompting
 
-The `describe` subcommand converts a natural-language tone request into a preset by calling your chosen LLM backend. The helper builds a structured prompt that includes:
+The `describe` subcommand converts a natural-language tone request into a preset with two LLM calls, whatever the length of the chain:
 
-- The minimal JSON schema (title + ordered block names) that the LLM must satisfy.
-- A template chain illustrating the required object layout.
-- A set of few-shot examples that pair real user goals with valid JSON responses built from the dataset’s display names.
-- A category-grouped catalog summary so the model selects only valid Helix blocks.
+1. **Block selection.** The prompt carries the signal-chain rules, two few-shot examples built from real catalog names, and the whole catalog as one `name - based on` line per model, grouped by category. The user's request comes last, so the static prefix can be reused from the backend's prompt cache.
+2. **Parameters.** One call sets every block at once (cabs keep their defaults), so the model can balance gain and levels across the chain. Blocks are keyed by position, and `null` keeps a parameter at its default.
+
+Each answer is constrained to a JSON schema: only catalog model names, and only in-range values and listed option labels, are admissible. An answer that is still rejected is asked again once, with the reason attached, before the run fails.
 
 You can pick between two providers:
 
-- `--llm-backend ollama` *(default)* — sends prompts to a locally hosted Ollama server via `--ollama-endpoint` and `--ollama-model`.
-- `--llm-backend openai` — uses the OpenAI Responses API. Set `OPENAI_API_KEY` in your environment (it can be read automatically from a `.env` file in the project tree) and specify an `--openai-model` such as `gpt-4o-mini`.
+- `--llm-backend ollama` *(default)* - sends prompts to a locally hosted Ollama server via `--ollama-endpoint` and `--ollama-model`. `--num-ctx` sets the context window (default 32768, raised automatically when a prompt would not fit). The model is kept loaded for 30 minutes between runs.
+- `--llm-backend openai` - uses the OpenAI Responses API with `gpt-5.6-sol`, `gpt-5.6-terra` *(default)* or `gpt-5.6-luna`. Set `OPENAI_API_KEY` in your environment (it can be read automatically from a `.env` file in the project tree).
 
-Because the few-shot responses are drawn from actual catalog entries, the LLM sees concrete demonstrations of how to translate stylistic goals into valid block selections, which measurably improves adherence to the simplified schema. The CLI expands the returned block list into a full preset using default parameters from `helix_model_information.json`. Parameter refinement for each block also runs through the same backend, so swapping providers affects both block choice and control values.
+`--reasoning-effort` (`none`, `low` *(default)*, `medium`, `high`, `xhigh`, `max`) sets how long the model thinks before answering; lower is faster. Ollama models support fewer levels (gpt-oss: `low` to `high`), and the nearest supported one is used. `hlxgen llm-models` lists the models and their levels. The desktop UI (`python -m hlxgen_ui`) offers the same choices on its Settings page.
 
 ## Testing
 Unit tests are written with `pytest`:

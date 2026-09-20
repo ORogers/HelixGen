@@ -1,7 +1,10 @@
 import json
 import logging
 import os
+import time
 from collections.abc import Callable, Iterable
+from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 from urllib import error, request
@@ -15,37 +18,57 @@ from .dataset import (
 
 
 class LLMGenerationError(RuntimeError):
-    """Raised when an Ollama-backed LLM response cannot be parsed."""
+    """Raised when an LLM request fails or its response cannot be used."""
 
 
-_CHAIN_SCHEMA = {
-    "type": "object",
-    "required": ["title", "blocks"],
-    "additionalProperties": False,
-    "properties": {
-        "title": {"type": "string", "minLength": 1},
-        "author": {"type": "string"},
-        "description": {"type": "string"},
-        "blocks": {
-            "type": "array",
-            "minItems": 1,
-            "items": {"type": "string", "minLength": 1},
-        },
-    },
-}
+# Defaults shared by the CLI (`hlxgen describe`) and the desktop UI (hlxgen_ui), so
+# the two can never drift apart on which model or thinking level they start from.
+DEFAULT_OLLAMA_MODEL = "gpt-oss:20b"
+DEFAULT_OLLAMA_ENDPOINT = "http://localhost:11434/api/generate"
 
+#: The OpenAI models offered, most capable first, each with a short description.
+OPENAI_MODELS: tuple[tuple[str, str], ...] = (
+    ("gpt-5.6-sol", "Flagship"),
+    ("gpt-5.6-terra", "Balanced"),
+    ("gpt-5.6-luna", "Cost-optimized"),
+)
+DEFAULT_OPENAI_MODEL = "gpt-5.6-terra"
 
-_EXAMPLE_CHAIN = {
-    "title": "Example Tone",
-    "blocks": [
-        "Horizon Drive",
-        "Transistor Tape",
-    ],
-}
+#: Thinking levels, least to most. Every offered OpenAI model supports all of them;
+#: Ollama models support a subset (see `supported_reasoning_efforts`).
+REASONING_EFFORTS: tuple[str, ...] = ("none", "low", "medium", "high", "xhigh", "max")
+DEFAULT_REASONING_EFFORT = "low"
+
+#: Context window requested from Ollama. It is raised automatically when a prompt
+#: needs more, so a prompt is never silently truncated; it is kept fixed across
+#: the calls of one generation because changing it makes Ollama reload the model.
+DEFAULT_NUM_CTX = 32768
+
+#: How long Ollama keeps the model loaded after a call, so the next generation
+#: skips reloading several gigabytes of weights.
+OLLAMA_KEEP_ALIVE = "30m"
+
+#: Ceiling on a single Ollama round trip. Generous, because a large local model
+#: legitimately takes minutes on one call - but never unbounded: without it a
+#: stalled server blocks the caller forever, which in the desktop UI meant a
+#: worker thread outliving its window and aborting the process at teardown.
+OLLAMA_TIMEOUT_SECONDS = 600
+
+#: Room left in the context window for the model's reasoning and its answer.
+_OUTPUT_HEADROOM_TOKENS = 8192
+
+#: Ollama models whose `think` option takes a level rather than true/false.
+_OLLAMA_LEVELLED_THINKING = ("gpt-oss",)
+_OLLAMA_LEVELS = ("low", "medium", "high")
+
+#: Ollama models that answer with empty text whenever a response schema is set
+#: (seen with gpt-oss on Ollama 0.33, for any schema). They get the JSON shape from
+#: the prompt alone, and a rejected answer is re-asked with the reason instead.
+_OLLAMA_SCHEMA_UNSUPPORTED = ("gpt-oss",)
 
 # Block names below must be display names that exist in helix_model_information.json:
-# the prompt penalises the model for inventing names, so the demonstrations have to
-# be drawn from the catalog too. Ordering follows the signal-chain rule stated in the
+# the response schema only admits catalog names, so the demonstrations have to be
+# drawn from the catalog too. Ordering follows the signal-chain rule stated in the
 # instructions (dynamics -> drive -> modulation -> amp -> cab -> delay -> reverb).
 _FEWSHOT_EXAMPLES = [
     {
@@ -77,6 +100,8 @@ _FEWSHOT_EXAMPLES = [
     },
 ]
 
+_MAX_BLOCKS = 8
+
 logger = logging.getLogger(__name__)
 if not logger.handlers:
     handler = logging.StreamHandler()
@@ -90,46 +115,336 @@ logger.propagate = False
 
 _OPENAI_CLIENT: Any | None = None
 
-#: Ceiling on a single Ollama round trip. Generous, because a large local model
-#: legitimately takes minutes on one call - but never unbounded: without it a
-#: stalled server blocks the caller forever, which in the desktop UI meant a
-#: worker thread outliving its window and aborting the process at teardown.
-OLLAMA_TIMEOUT_SECONDS = 600
+
+@dataclass(frozen=True)
+class LLMRequest:
+    """One prompt plus the JSON schema its answer is constrained to."""
+
+    prompt: str
+    schema: dict[str, Any]
+    #: Identifies the round ("chain" or "parameters"); OpenAI also requires it.
+    schema_name: str
+
+
+LLMCaller = Callable[[LLMRequest], str]
 
 
 def generate_chain_from_prompt(
     prompt: str,
     catalog: ModelCatalog,
-    llm_model: str,
-    endpoint: str = "http://localhost:11434/api/generate",
+    llm_model: str = DEFAULT_OLLAMA_MODEL,
+    endpoint: str = DEFAULT_OLLAMA_ENDPOINT,
     *,
     backend: str = "ollama",
     openai_model: str | None = None,
+    reasoning_effort: str = DEFAULT_REASONING_EFFORT,
+    num_ctx: int = DEFAULT_NUM_CTX,
     on_progress: Callable[[str], None] | None = None,
 ) -> dict[str, Any]:
     """Return a signal chain dictionary generated from a natural-language prompt.
 
+    Two LLM round trips: one picks the blocks, one sets every block's parameters.
+    Each answer is constrained to a JSON schema, and a rejected answer is re-asked
+    once with the reason attached before the run fails.
+
     ``on_progress``, when provided, is called with the same human-readable
-    status messages that are otherwise only sent to ``logger`` - one per LLM
-    round trip. It is optional and purely additive: omitting it reproduces
-    today's CLI behaviour exactly.
+    status messages that are otherwise only sent to ``logger``. It is optional
+    and purely additive: omitting it reproduces the CLI behaviour exactly.
     """
 
     def _report(message: str) -> None:
         if on_progress is not None:
             on_progress(message)
 
+    started = time.monotonic()
     call_llm = _build_llm_caller(
         backend=backend,
         default_model=llm_model,
         endpoint=endpoint,
         openai_model=openai_model,
+        reasoning_effort=reasoning_effort,
+        num_ctx=num_ctx,
     )
+
     logger.info("Requesting initial block selection for prompt: %s", prompt)
     _report("Requesting initial block selection...")
-    full_prompt = _compose_prompt(prompt, catalog)
-    response_text = call_llm(full_prompt)
-    spec = _parse_chain(response_text)
+    round_started = time.monotonic()
+    chain_request = LLMRequest(
+        prompt=_compose_prompt(prompt, catalog),
+        schema=_chain_schema(catalog),
+        schema_name="chain",
+    )
+    chain, resolved_models = _ask(
+        call_llm,
+        chain_request,
+        lambda text: _parse_chain_response(text, catalog),
+        on_retry=lambda: _report("Retrying block selection..."),
+    )
+    elapsed = time.monotonic() - round_started
+    names = ", ".join(model.display_name for model in resolved_models)
+    logger.info("LLM selected %d block(s) in %.1fs: %s", len(resolved_models), elapsed, names)
+    _report(f"Selected {len(resolved_models)} block(s): {names} ({elapsed:.1f}s)")
+
+    _populate_block_parameters_with_llm(
+        prompt=prompt,
+        call_llm=call_llm,
+        chain=chain,
+        models=resolved_models,
+        on_progress=on_progress,
+    )
+
+    total = time.monotonic() - started
+    logger.info("Chain generation complete in %.1fs", total)
+    _report(f"Chain generation complete ({total:.1f}s total).")
+    return chain
+
+
+def supported_reasoning_efforts(
+    backend: str, model: str, endpoint: str | None = None
+) -> tuple[str, ...]:
+    """The thinking levels ``model`` accepts on ``backend``, least to most.
+
+    Empty when the model does not think at all. For Ollama, pass ``endpoint`` to
+    ask the server what the model can do; without it the answer comes from the
+    model's name alone.
+    """
+
+    if _normalize_backend(backend) == "openai":
+        return REASONING_EFFORTS
+    if _is_levelled_ollama_model(model):
+        return _OLLAMA_LEVELS
+    if endpoint is not None and not _ollama_supports_thinking(endpoint, model):
+        return ()
+    # Other thinking models on Ollama only switch thinking on ("low") or off.
+    return ("none", "low")
+
+
+def resolve_reasoning_effort(backend: str, model: str, requested: str) -> str:
+    """Return ``requested`` if ``model`` supports it, else the nearest level it does."""
+
+    if requested not in REASONING_EFFORTS:
+        raise LLMGenerationError(
+            f"Unknown thinking level '{requested}'. Choose one of: {', '.join(REASONING_EFFORTS)}"
+        )
+    return nearest_reasoning_effort(requested, supported_reasoning_efforts(backend, model))
+
+
+def nearest_reasoning_effort(requested: str, supported: Iterable[str]) -> str:
+    """The level in ``supported`` closest to ``requested``; ties go to the lower
+    level, because lower is faster. ``requested`` itself when nothing is supported."""
+
+    supported = tuple(supported)
+    if not supported or requested in supported:
+        return requested
+    target = REASONING_EFFORTS.index(requested)
+    return min(
+        supported,
+        key=lambda level: (
+            abs(REASONING_EFFORTS.index(level) - target),
+            REASONING_EFFORTS.index(level),
+        ),
+    )
+
+
+def list_llm_models(backend: str, endpoint: str = DEFAULT_OLLAMA_ENDPOINT) -> list[str]:
+    """Models the user can pick for ``backend``.
+
+    OpenAI offers a fixed list (:data:`OPENAI_MODELS`); Ollama lists what is
+    installed on the server behind ``endpoint``.
+    """
+
+    if _normalize_backend(backend) == "openai":
+        return [model_id for model_id, _ in OPENAI_MODELS]
+    body = _ollama_request(_ollama_url(endpoint, "/api/tags"), None, timeout=10)
+    models = body.get("models") if isinstance(body, dict) else None
+    if not isinstance(models, list):
+        raise LLMGenerationError("Unexpected response from Ollama when listing models")
+    names = [entry.get("name") for entry in models if isinstance(entry, dict)]
+    return sorted(name for name in names if isinstance(name, str) and name)
+
+
+def _normalize_backend(backend: str | None) -> str:
+    key = (backend or "ollama").strip().lower()
+    if key in ("ollama", ""):
+        return "ollama"
+    if key == "openai":
+        return "openai"
+    raise LLMGenerationError(f"Unsupported LLM backend '{backend}'")
+
+
+def _is_levelled_ollama_model(model: str) -> bool:
+    return any(model.strip().lower().startswith(prefix) for prefix in _OLLAMA_LEVELLED_THINKING)
+
+
+def _build_llm_caller(
+    *,
+    backend: str,
+    default_model: str,
+    endpoint: str,
+    openai_model: str | None,
+    reasoning_effort: str = DEFAULT_REASONING_EFFORT,
+    num_ctx: int = DEFAULT_NUM_CTX,
+) -> LLMCaller:
+    """Return a callable that executes requests against the requested LLM backend."""
+
+    backend_key = _normalize_backend(backend)
+    if backend_key == "openai":
+        model_name = (openai_model or DEFAULT_OPENAI_MODEL).strip()
+        offered = [model_id for model_id, _ in OPENAI_MODELS]
+        if model_name not in offered:
+            raise LLMGenerationError(
+                f"OpenAI model '{model_name}' is not supported. Choose one of: {', '.join(offered)}"
+            )
+        effort = resolve_reasoning_effort(backend_key, model_name, reasoning_effort)
+        client = _get_openai_client()
+        logger.info("Using OpenAI model %s, thinking level %s", model_name, effort)
+
+        def _call(llm_request: LLMRequest) -> str:
+            return _timed(
+                llm_request,
+                lambda: _call_openai(model_name, llm_request, effort=effort, client=client),
+            )
+
+        return _call
+
+    model_name = (default_model or DEFAULT_OLLAMA_MODEL).strip()
+    think = _ollama_think_option(endpoint, model_name, reasoning_effort)
+    use_schema = not model_name.lower().startswith(_OLLAMA_SCHEMA_UNSUPPORTED)
+    logger.info(
+        "Using Ollama model %s, thinking %s",
+        model_name,
+        "not supported" if think is None else think,
+    )
+
+    def _call(llm_request: LLMRequest) -> str:
+        context = _ollama_num_ctx(llm_request.prompt, num_ctx)
+        return _timed(
+            llm_request,
+            lambda: _call_ollama(
+                endpoint,
+                model_name,
+                llm_request,
+                think=think,
+                num_ctx=context,
+                use_schema=use_schema,
+            ),
+        )
+
+    return _call
+
+
+def _timed(llm_request: LLMRequest, call: Callable[[], str]) -> str:
+    started = time.monotonic()
+    try:
+        return call()
+    finally:
+        logger.info(
+            "LLM call '%s' took %.1fs", llm_request.schema_name, time.monotonic() - started
+        )
+
+
+def _ask(
+    call_llm: LLMCaller,
+    llm_request: LLMRequest,
+    parse: Callable[[str], Any],
+    *,
+    on_retry: Callable[[], None],
+) -> Any:
+    """Call the LLM and parse its answer, re-asking once if the answer is rejected.
+
+    The retry carries the rejection reason, so the model can correct the one
+    mistake instead of the whole generation starting over.
+    """
+
+    response_text = call_llm(llm_request)
+    try:
+        return parse(response_text)
+    except LLMGenerationError as exc:
+        logger.warning("Answer for '%s' rejected, retrying once: %s", llm_request.schema_name, exc)
+        on_retry()
+        retry = LLMRequest(
+            prompt=(
+                f"{llm_request.prompt}\n\n"
+                f"Your previous answer was rejected: {exc}\n"
+                "Answer again, correcting that."
+            ),
+            schema=llm_request.schema,
+            schema_name=llm_request.schema_name,
+        )
+        return parse(call_llm(retry))
+
+
+def _compose_prompt(user_prompt: str, catalog: ModelCatalog) -> str:
+    """The block-selection prompt. Everything static comes first and the user's
+    goal last, so both Ollama and OpenAI can reuse the cached prompt prefix."""
+
+    instructions = (
+        "You are a tone designer building signal chains for the Line 6 Helix. "
+        "Choose the blocks that best achieve the user's goal and give the chain a short title.\n"
+        "Rules:\n"
+        f"- Use between 1 and {_MAX_BLOCKS} blocks, each named exactly as in the model list below.\n"
+        "- Select only blocks that directly support the requested tone. A category can be "
+        "skipped when it doesn't fit; for example, a distortion is not always needed.\n"
+        "- The chain must include an amp, a cab, and a reverb.\n"
+        "- Order: dynamics -> drive/distortion -> modulation -> amp -> cab -> delay -> reverb.\n"
+        "- Choose blocks only. Parameters are set in a separate step.\n"
+        'Answer with one JSON object: {"title": string, "blocks": [model names in order]}.'
+    )
+    examples = "\n".join(
+        f"Example {index} - goal: {sample['goal']}\n"
+        f"{json.dumps(sample['response'], separators=(',', ':'))}"
+        for index, sample in enumerate(_FEWSHOT_EXAMPLES, start=1)
+    )
+    return "\n\n".join(
+        [
+            instructions,
+            examples,
+            "Available models by category (name - real-world reference):\n"
+            + _summarize_catalog(catalog),
+            f"User goal: {user_prompt.strip()}",
+        ]
+    )
+
+
+def _summarize_catalog(catalog: ModelCatalog) -> str:
+    """One line per model, grouped under category headers, in a stable order."""
+
+    grouped: dict[str, list[str]] = {}
+    for model in sorted(catalog.models(), key=lambda m: m.display_name.lower()):
+        line = model.display_name
+        if model.based_on:
+            line += f" - {model.based_on}"
+        grouped.setdefault(model.category or "Uncategorized", []).append(line)
+    return "\n".join(
+        f"## {category}\n" + "\n".join(lines) for category, lines in grouped.items()
+    )
+
+
+def _chain_schema(catalog: ModelCatalog) -> dict[str, Any]:
+    """Block selection answer schema. Only catalog names are admissible, so a
+    constrained decoder cannot invent a model."""
+
+    names = sorted({model.display_name for model in catalog.models()}, key=str.lower)
+    return {
+        "type": "object",
+        "properties": {
+            "title": {"type": "string"},
+            "blocks": {
+                "type": "array",
+                "items": {"type": "string", "enum": names},
+                "minItems": 1,
+                "maxItems": _MAX_BLOCKS,
+            },
+        },
+        "required": ["title", "blocks"],
+        "additionalProperties": False,
+    }
+
+
+def _parse_chain_response(
+    response_text: str, catalog: ModelCatalog
+) -> tuple[dict[str, Any], list[ModelDefinition]]:
+    spec = _parse_json_response(response_text)
     if not isinstance(spec, dict):
         raise LLMGenerationError(
             "LLM response must be a JSON object that matches the chain schema"
@@ -168,133 +483,78 @@ def generate_chain_from_prompt(
             ) from exc
         resolved_models.append(model)
         chain["blocks"].append({"model": model.display_name})
+    return chain, resolved_models
 
-    logger.info(
-        "LLM selected %d block(s): %s",
-        len(resolved_models),
-        ", ".join(model.display_name for model in resolved_models),
-    )
-    _report(
-        f"Selected {len(resolved_models)} block(s): "
-        + ", ".join(model.display_name for model in resolved_models)
-    )
 
-    if resolved_models:
-        _populate_block_parameters_with_llm(
-            prompt=prompt,
-            call_llm=call_llm,
-            chain=chain,
-            models=resolved_models,
-            on_progress=on_progress,
+def _ollama_url(endpoint: str, path: str) -> str:
+    """Another Ollama API path on the same server as the generate ``endpoint``."""
+
+    base = endpoint.split("/api/", 1)[0] if "/api/" in endpoint else endpoint.rstrip("/")
+    return base + path
+
+
+def _ollama_think_option(endpoint: str, model_name: str, reasoning_effort: str) -> str | bool | None:
+    """Map a thinking level onto Ollama's ``think`` option, or None to omit it."""
+
+    if not _ollama_supports_thinking(endpoint, model_name):
+        logger.info("Ollama model %s does not think; thinking level ignored", model_name)
+        return None
+    effort = resolve_reasoning_effort("ollama", model_name, reasoning_effort)
+    if effort != reasoning_effort:
+        logger.info(
+            "Ollama model %s has no '%s' thinking level; using '%s'",
+            model_name,
+            reasoning_effort,
+            effort,
         )
-
-    _report("Chain generation complete.")
-    return chain
-
-
-def _build_llm_caller(
-    *,
-    backend: str,
-    default_model: str,
-    endpoint: str,
-    openai_model: str | None,
-) -> Callable[[str], str]:
-    """Return a callable that executes prompts against the requested LLM backend."""
-
-    backend_key = (backend or "ollama").strip().lower()
-    if backend_key == "openai":
-        model_name = (openai_model or default_model or "").strip()
-        if not model_name:
-            raise LLMGenerationError("OpenAI backend requires a model name")
-        client = _get_openai_client()
-
-        def _call(prompt: str) -> str:
-            return _call_openai(model_name, prompt, client=client)
-
-        return _call
-
-    if backend_key in ("ollama", ""):
-
-        def _call(prompt: str) -> str:
-            return _call_ollama(endpoint, default_model, prompt)
-
-        return _call
-
-    raise LLMGenerationError(f"Unsupported LLM backend '{backend}'")
+    if _is_levelled_ollama_model(model_name):
+        return effort
+    return effort != "none"
 
 
-def _compose_prompt(user_prompt: str, catalog: ModelCatalog) -> str:
-    models_summary = _summarize_catalog(catalog)
-    example_json = json.dumps(_EXAMPLE_CHAIN, indent=2)
-    schema_json = json.dumps(_CHAIN_SCHEMA, indent=2)
-    fewshot_blocks: list[str] = []
-    for index, sample in enumerate(_FEWSHOT_EXAMPLES, start=1):
-        rendered = json.dumps(sample["response"], indent=2)
-        fewshot_blocks.append(
-            f"Example {index} — user goal: {sample['goal']}\n{rendered}"
+@lru_cache(maxsize=32)
+def _ollama_supports_thinking(endpoint: str, model_name: str) -> bool:
+    try:
+        body = _ollama_request(
+            _ollama_url(endpoint, "/api/show"), {"model": model_name}, timeout=10
         )
-    fewshot_text = "\n\n".join(fewshot_blocks)
-    instructions = (
-        "You are a tone designer that builds signal chains for the Line 6 Helix. "
-        "Return EXACTLY one JSON object compatible with hlxgen and nothing else. "
-        "Do not wrap the object in an array or add leading text—the response must "
-        "begin with '{' and end with '}'. The object must include a 'title' string "
-        "and a 'blocks' array. Each entry in 'blocks' must be the display name of a "
-        "model listed below. Select only the blocks that directly support the "
-        "requested tone; avoid unrelated effects and limit the chain to the most "
-        "useful 1-8 blocks. Try to reason why each block would be included to match the user request tone"
-        "The chain MUST include an amp and a cab and a reverb. Provide only the title and ordered list "
-        "of block names—parameters will be requested separately, do not include them now."
-        "The order should be as such, dynamics -> drive/distorition -> modulation-> amp -> cab -> delay -> reverb"
-        "You do not need to select a pedal from at catagory if you don't think it will fit. I.e a distorion is not always needed."
-        "The JSON must "
-        "validate against the exact schema provided. Do not include markdown fences or "
-        "commentary—output strictly JSON."
-        "You will be strongly pinalized for returning block names that are not in the dataset"
-    )
-    summary_text = json.dumps(models_summary, indent=2)
-    sections: list[str] = [
-        instructions,
-        f"Required JSON schema:\n{schema_json}",
-        f"Example chain structure:\n{example_json}",
-    ]
-    if fewshot_text:
-        sections.append(fewshot_text)
-    sections.append(
-        "Available models by category (ordered, include only relevant blocks):\n"
-        f"{summary_text}"
-    )
-    sections.append(f"User goal: {user_prompt.strip()}")
-    sections.append("Respond with valid JSON only.")
-    return "\n\n".join(sections)
-
-def _summarize_catalog(catalog: ModelCatalog) -> dict[str, list[dict[str, Any]]]:
-    grouped: dict[str, list[dict[str, Any]]] = {}
-    for model in sorted(catalog.models(), key=lambda m: m.display_name.lower()):
-        category = model.category or "Uncategorized"
-        info: dict[str, Any] = {
-            "name": model.display_name,
-            "internal_name": model.internal_name,
-        }
-        if model.based_on:
-            info["based_on"] = model.based_on
-
-        grouped.setdefault(category, []).append(info)
-    return grouped
+    except LLMGenerationError as exc:
+        # Older servers have no capability list; fall back to what we know.
+        logger.info("Could not read capabilities of %s (%s)", model_name, exc)
+        return _is_levelled_ollama_model(model_name)
+    capabilities = body.get("capabilities") if isinstance(body, dict) else None
+    if not isinstance(capabilities, list):
+        return _is_levelled_ollama_model(model_name)
+    return "thinking" in capabilities
 
 
-def _call_ollama(endpoint: str, model_name: str, prompt: str) -> str:
-    payload = json.dumps({"model": model_name, "prompt": prompt, "stream": False}).encode(
-        "utf-8"
-    )
+def _ollama_num_ctx(prompt: str, requested: int) -> int:
+    """``requested``, raised if the prompt plus room for an answer would not fit.
+
+    Estimates at three characters per token, which overestimates for the
+    English and JSON these prompts contain, so the estimate errs on the safe side.
+    """
+
+    needed = len(prompt) // 3 + _OUTPUT_HEADROOM_TOKENS
+    if needed <= requested:
+        return requested
+    raised = -(-needed // 4096) * 4096
+    logger.info("Raising Ollama context window from %d to %d tokens to fit the prompt", requested, raised)
+    return raised
+
+
+def _ollama_request(url: str, payload: dict[str, Any] | None, *, timeout: float) -> Any:
+    """POST ``payload`` (or GET when None) to Ollama and return the decoded JSON."""
+
+    data = json.dumps(payload).encode("utf-8") if payload is not None else None
     req = request.Request(
-        endpoint,
-        data=payload,
+        url,
+        data=data,
         headers={"Content-Type": "application/json"},
-        method="POST",
+        method="POST" if payload is not None else "GET",
     )
     try:
-        with request.urlopen(req, timeout=OLLAMA_TIMEOUT_SECONDS) as resp:
+        with request.urlopen(req, timeout=timeout) as resp:
             body = resp.read().decode("utf-8")
     except error.HTTPError as exc:
         detail = ""
@@ -326,34 +586,116 @@ def _call_ollama(endpoint: str, model_name: str, prompt: str) -> str:
             )
         raise LLMGenerationError(message) from exc
     except error.URLError as exc:
-        raise LLMGenerationError(f"Failed to reach Ollama endpoint {endpoint}: {exc}") from exc
+        raise LLMGenerationError(f"Failed to reach Ollama endpoint {url}: {exc}") from exc
+    except TimeoutError as exc:
+        raise LLMGenerationError(f"Ollama did not answer within {timeout:.0f}s") from exc
     try:
-        parsed = json.loads(body)
+        return json.loads(body)
     except json.JSONDecodeError as exc:
         raise LLMGenerationError("Ollama returned invalid JSON") from exc
+
+
+def _call_ollama(
+    endpoint: str,
+    model_name: str,
+    llm_request: LLMRequest,
+    *,
+    think: str | bool | None = None,
+    num_ctx: int = DEFAULT_NUM_CTX,
+    use_schema: bool = True,
+) -> str:
+    payload: dict[str, Any] = {
+        "model": model_name,
+        "prompt": llm_request.prompt,
+        "stream": False,
+        "keep_alive": OLLAMA_KEEP_ALIVE,
+        "options": {"num_ctx": num_ctx},
+    }
+    if use_schema:
+        payload["format"] = llm_request.schema
+    if think is not None:
+        payload["think"] = think
+    parsed = _ollama_request(endpoint, payload, timeout=OLLAMA_TIMEOUT_SECONDS)
     if isinstance(parsed, dict) and parsed.get("error"):
         raise LLMGenerationError(str(parsed["error"]))
     if not isinstance(parsed, dict) or "response" not in parsed:
         raise LLMGenerationError("Unexpected response from Ollama")
+    _log_ollama_metrics(llm_request.schema_name, parsed, num_ctx)
     response_text = parsed.get("response")
     if not isinstance(response_text, str) or not response_text.strip():
         raise LLMGenerationError("Ollama response did not contain text output")
     return response_text
 
 
-def _call_openai(model_name: str, prompt: str, *, client: Any | None = None) -> str:
+def _log_ollama_metrics(name: str, body: dict[str, Any], num_ctx: int) -> None:
+    def seconds(key: str) -> float:
+        value = body.get(key)
+        return value / 1e9 if isinstance(value, (int, float)) else 0.0
+
+    prompt_tokens = body.get("prompt_eval_count")
+    logger.info(
+        "Ollama '%s': load %.1fs, prompt %s tokens in %.1fs, output %s tokens in %.1fs",
+        name,
+        seconds("load_duration"),
+        prompt_tokens,
+        seconds("prompt_eval_duration"),
+        body.get("eval_count"),
+        seconds("eval_duration"),
+    )
+    if isinstance(prompt_tokens, int) and prompt_tokens >= num_ctx * 0.9:
+        logger.warning(
+            "Ollama '%s' prompt used %d of %d context tokens; it may have been truncated",
+            name,
+            prompt_tokens,
+            num_ctx,
+        )
+
+
+def _call_openai(
+    model_name: str,
+    llm_request: LLMRequest,
+    *,
+    effort: str = DEFAULT_REASONING_EFFORT,
+    client: Any | None = None,
+) -> str:
     client = client or _get_openai_client()
     try:
         response = client.responses.create(
             model=model_name,
-            input=prompt,
+            input=llm_request.prompt,
+            reasoning={"effort": effort},
+            text={
+                "format": {
+                    "type": "json_schema",
+                    "name": llm_request.schema_name,
+                    "schema": llm_request.schema,
+                    "strict": True,
+                }
+            },
         )
     except Exception as exc:  # pragma: no cover - network errors not hit in tests
         raise LLMGenerationError(f"OpenAI request failed: {exc}") from exc
+    _log_openai_usage(llm_request.schema_name, response)
     text = _extract_text_from_openai_response(response)
     if not text:
         raise LLMGenerationError("OpenAI response did not contain text output")
     return text
+
+
+def _log_openai_usage(name: str, response: Any) -> None:
+    usage = getattr(response, "usage", None)
+    if usage is None:
+        return
+    input_details = getattr(usage, "input_tokens_details", None)
+    output_details = getattr(usage, "output_tokens_details", None)
+    logger.info(
+        "OpenAI '%s': input %s tokens (%s cached), output %s tokens (%s reasoning)",
+        name,
+        getattr(usage, "input_tokens", None),
+        getattr(input_details, "cached_tokens", None),
+        getattr(usage, "output_tokens", None),
+        getattr(output_details, "reasoning_tokens", None),
+    )
 
 
 def _extract_text_from_openai_response(response: Any) -> str | None:
@@ -508,8 +850,6 @@ def _parse_dotenv_line(line: str) -> tuple[str, str] | None:
     return key, value
 
 
-def _parse_chain(response_text: str) -> Any:
-    return _parse_json_response(response_text)
 
 
 def _parse_json_response(response_text: str) -> Any:
@@ -537,13 +877,16 @@ def _parse_json_response(response_text: str) -> Any:
             raise LLMGenerationError("LLM response did not contain valid JSON") from exc
 
 
+
 def _populate_block_parameters_with_llm(
     prompt: str,
-    call_llm: Callable[[str], str],
+    call_llm: LLMCaller,
     chain: dict[str, Any],
     models: list[ModelDefinition],
     on_progress: Callable[[str], None] | None = None,
 ) -> None:
+    """Set every block's parameters with a single LLM call."""
+
     def _report(message: str) -> None:
         if on_progress is not None:
             on_progress(message)
@@ -551,112 +894,138 @@ def _populate_block_parameters_with_llm(
     chain_title = chain.get("meta", {}).get("name") or chain.get("title") or "Generated Tone"
     ordered_block_names = [model.display_name for model in models]
 
-    for index, (block_spec, model) in enumerate(
-        zip(chain["blocks"], models, strict=True)
-    ):
-        if not isinstance(block_spec, dict):
-            continue
-
-        parameter_summary = _summarize_parameters(model)
-        category_label = (model.category or "").lower()
-        if "cab" in category_label:
+    # Blocks keyed by position ("block1", ...) rather than name: a chain may hold
+    # the same model twice, and each one gets its own settings.
+    targets: dict[str, tuple[dict[str, Any], ModelDefinition, list[dict[str, Any]]]] = {}
+    for index, (block_spec, model) in enumerate(zip(chain["blocks"], models, strict=True)):
+        if "cab" in (model.category or "").lower():
             logger.info(
                 "Skipping parameter selection for cab block '%s'; using defaults.",
                 model.display_name,
             )
             _report(f"Skipping '{model.display_name}' (cab defaults used).")
             continue
+        parameter_summary = _summarize_parameters(model)
         if not parameter_summary:
             logger.info("No adjustable parameters found for block '%s'", model.display_name)
             _report(f"No adjustable parameters for '{model.display_name}'.")
             continue
+        targets[f"block{index + 1}"] = (block_spec, model, parameter_summary)
 
-        logger.info(
-            "Selecting parameters for block %d/%d: %s",
-            index + 1,
-            len(models),
-            model.display_name,
-        )
-        _report(
-            f"Setting parameters for block {index + 1}/{len(models)}: "
-            f"{model.display_name}..."
-        )
+    if not targets:
+        return
 
-        parameter_prompt = _compose_parameter_prompt(
+    logger.info("Selecting parameters for %d block(s)", len(targets))
+    _report(f"Setting parameters for {len(targets)} block(s)...")
+    started = time.monotonic()
+    parameters_request = LLMRequest(
+        prompt=_compose_parameter_prompt(
             user_prompt=prompt,
             chain_title=chain_title,
             chain_blocks=ordered_block_names,
-            model=model,
-            parameter_summary=parameter_summary,
-            position=index,
-        )
+            targets={key: (model, summary) for key, (_, model, summary) in targets.items()},
+        ),
+        schema=_parameters_schema(
+            {key: summary for key, (_, _, summary) in targets.items()}
+        ),
+        schema_name="parameters",
+    )
+    chosen = _ask(
+        call_llm,
+        parameters_request,
+        lambda text: _parse_parameters_response(
+            text, {key: model for key, (_, model, _) in targets.items()}
+        ),
+        on_retry=lambda: _report("Retrying parameter selection..."),
+    )
 
-        response_text = call_llm(parameter_prompt)
-        raw_parameters = _parse_parameter_response(response_text)
-        try:
-            normalized_parameters = _normalize_parameters(model, raw_parameters)
-        except LLMGenerationError:
-            raise
-        except Exception as exc:  # pragma: no cover - wrap unexpected validation issues
-            raise LLMGenerationError(
-                f"Failed to normalize parameters for block '{model.display_name}': {exc}"
-            ) from exc
-
-        if normalized_parameters:
+    for key, (block_spec, model, _) in targets.items():
+        normalized_parameters = chosen.get(key)
+        if normalized_parameters is None:
+            logger.warning(
+                "LLM returned no settings for '%s'; defaults will be used.", model.display_name
+            )
+            _report(f"Using defaults for '{model.display_name}'.")
+        elif normalized_parameters:
             block_spec.setdefault("parameters", {}).update(normalized_parameters)
             logger.info(
-                "Parameters selected for '%s': %s",
-                model.display_name,
-                normalized_parameters,
+                "Parameters selected for '%s': %s", model.display_name, normalized_parameters
             )
-            _report(f"Parameters set for '{model.display_name}'.")
         else:
-            logger.info("LLM did not specify parameters for '%s'; defaults will be used.", model.display_name)
-            _report(f"Using defaults for '{model.display_name}'.")
+            logger.info(
+                "LLM kept every default for '%s'.", model.display_name
+            )
+
+    elapsed = time.monotonic() - started
+    _report(f"Parameters set for {len(targets)} block(s) ({elapsed:.1f}s)")
 
 
 def _compose_parameter_prompt(
     user_prompt: str,
     chain_title: str,
     chain_blocks: Iterable[str],
-    model: ModelDefinition,
-    parameter_summary: list[dict[str, Any]],
-    position: int,
+    targets: dict[str, tuple[ModelDefinition, list[dict[str, Any]]]],
 ) -> str:
-    summary_json = json.dumps(parameter_summary, indent=2)
-    chain_json = json.dumps(list(chain_blocks), indent=2)
-
     instructions = (
-        "You are configuring parameters for a single block in a Line 6 Helix preset. "
-        "Use the player's request and overall chain context to choose musical values. "
-        "Respond with EXACTLY one JSON object. The object MUST contain a single key "
-        "named 'parameters' whose value is a mapping of parameter names to the chosen values. "
-        "Do not include explanatory text or markdown fences. "
-        "Choose values that make musical sense and stay within the provided limits. "
-        "Don't set the gain or drive on distortion pedals, compressors or amps very high. distortion pedals will be used in "
-        "conjunction with amps to get a high gain sound."
-        "For enumerated options, return the option label exactly as listed. "
-        "For boolean parameters, return true or false. "
-        "For continuous parameters, return a numeric value within the inclusive range. "
-        "Only include parameters you intend to adjust; omit ones that should stay at their defaults."
+        "You are configuring the parameters of the blocks in a Line 6 Helix preset. "
+        "Use the player's request and the whole chain to choose musical values that "
+        "work together; for example, stage gain across drives and the amp.\n"
+        "Rules:\n"
+        "- Stay within each parameter's range. For options, use a label exactly as listed.\n"
+        "- Keep gain and drive moderate on distortion pedals, compressors, and amps: "
+        "drives are used together with the amp to reach high gain.\n"
+        "- Use null for a parameter that should stay at its default.\n"
+        'Answer with one JSON object: {"blocks": {"block1": {"<parameter>": value, ...}, ...}} '
+        "covering every block listed below."
     )
-
+    blocks_text = "\n\n".join(
+        _render_block(key, model, summary) for key, (model, summary) in targets.items()
+    )
     return (
         f"{instructions}\n\n"
         f"Player request: {user_prompt.strip()}\n"
         f"Chain title: {chain_title}\n"
-        f"Full chain order: {chain_json}\n"
-        f"Target block position: {position + 1}\n"
-        f"Target block name: {model.display_name}\n"
-        f"Block category: {model.category or 'Uncategorized'}\n"
-        f"Reference (based on): {model.based_on or 'Unknown'}\n"
-        f"Available parameters:\n{summary_json}\n"
-        "Return a JSON object like:\n{\n  \"parameters\": {\n    \"Drive\": 0.65,\n    \"Level\": 0.8\n  }\n}\n"
-        "Respond with JSON only."
+        f"Full chain order: {' -> '.join(chain_blocks)}\n\n"
+        f"Blocks to configure:\n\n{blocks_text}"
     )
 
 
+def _render_block(key: str, model: ModelDefinition, summary: list[dict[str, Any]]) -> str:
+    header = f"{key}: {model.display_name} ({model.category or 'Uncategorized'}"
+    if model.based_on:
+        header += f", based on {model.based_on}"
+    lines = [header + ")"]
+    for entry in summary:
+        line = f"- {entry['name']}: {entry['type']}"
+        if entry["type"] == "continuous":
+            line += f" {_format_number(entry.get('min'))}..{_format_number(entry.get('max'))}"
+        elif entry["type"] == "enum":
+            line += " [" + ", ".join(entry.get("options", [])) + "]"
+        if "default" in entry:
+            line += f", default {_format_default(entry)}"
+        lines.append(line)
+    return "\n".join(lines)
+
+
+def _format_number(value: Any) -> str:
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    return str(value)
+
+
+def _format_default(entry: dict[str, Any]) -> str:
+    default = entry["default"]
+    if entry["type"] == "enum":
+        labels = entry.get("option_values", {})
+        return str(labels.get(default, default))
+    if entry["type"] == "boolean":
+        return "true" if default else "false"
+    return _format_number(default)
+
+
 def _summarize_parameters(model: ModelDefinition) -> list[dict[str, Any]]:
+    """The adjustable (non-@) parameters of ``model`` with their types and limits."""
+
     summary: list[dict[str, Any]] = []
     for name in sorted(model.parameter_names()):
         if name.startswith("@"):
@@ -674,37 +1043,110 @@ def _summarize_parameters(model: ModelDefinition) -> list[dict[str, Any]]:
                 entry["min"] = definition.min_value
             if definition.max_value is not None:
                 entry["max"] = definition.max_value
-        elif definition.value_type == 2 or definition.forward_map:
+        elif definition.display_type == "boolean":
+            entry["type"] = "boolean"
+        elif definition.forward_map:
             entry["type"] = "enum"
-            options = []
-            for raw_value, label in sorted(definition.forward_map.items(), key=lambda item: item[0]):
-                try:
-                    normalized_value = int(raw_value)
-                except ValueError:
-                    normalized_value = raw_value
-                options.append({"value": normalized_value, "label": label})
-            if options:
-                entry["options"] = options
-            if definition.display_type == "boolean":
-                entry["type"] = "boolean"
+            ordered = sorted(definition.forward_map.items(), key=lambda item: _enum_sort_key(item[0]))
+            options: list[str] = []
+            option_values: dict[Any, str] = {}
+            for raw_value, label in ordered:
+                label_text = str(label)
+                if label_text not in options:
+                    options.append(label_text)
+                option_values[_enum_value(raw_value)] = label_text
+            entry["options"] = options
+            entry["option_values"] = option_values
         else:
-            if definition.display_type == "boolean":
-                entry["type"] = "boolean"
-            else:
-                entry["type"] = definition.display_type or "value"
+            entry["type"] = "number"
 
         summary.append(entry)
     return summary
 
 
-def _parse_parameter_response(response_text: str) -> dict[str, Any]:
+def _enum_value(raw_value: str) -> Any:
+    try:
+        return int(raw_value)
+    except ValueError:
+        return raw_value
+
+
+def _enum_sort_key(raw_value: str) -> tuple[int, Any]:
+    value = _enum_value(raw_value)
+    return (0, value) if isinstance(value, int) else (1, value)
+
+
+def _parameters_schema(targets: dict[str, list[dict[str, Any]]]) -> dict[str, Any]:
+    """Parameter answer schema: one object per block, every parameter nullable
+    (null keeps the default), limits and option labels enforced."""
+
+    blocks: dict[str, Any] = {}
+    for key, summary in targets.items():
+        properties = {entry["name"]: _parameter_schema(entry) for entry in summary}
+        blocks[key] = {
+            "type": "object",
+            "properties": properties,
+            "required": list(properties),
+            "additionalProperties": False,
+        }
+    return {
+        "type": "object",
+        "properties": {
+            "blocks": {
+                "type": "object",
+                "properties": blocks,
+                "required": list(blocks),
+                "additionalProperties": False,
+            }
+        },
+        "required": ["blocks"],
+        "additionalProperties": False,
+    }
+
+
+def _parameter_schema(entry: dict[str, Any]) -> dict[str, Any]:
+    kind = entry["type"]
+    if kind == "continuous":
+        schema: dict[str, Any] = {"type": ["number", "null"]}
+        if entry.get("min") is not None:
+            schema["minimum"] = entry["min"]
+        if entry.get("max") is not None:
+            schema["maximum"] = entry["max"]
+        return schema
+    if kind == "boolean":
+        return {"type": ["boolean", "null"]}
+    if kind == "enum":
+        return {"type": ["string", "null"], "enum": [*entry["options"], None]}
+    return {"type": ["number", "null"]}
+
+
+def _parse_parameters_response(
+    response_text: str, models: dict[str, ModelDefinition]
+) -> dict[str, dict[str, Any]]:
+    """Map each block key to its normalized parameters, nulls dropped.
+
+    Blocks the answer leaves out are absent from the result (their defaults stay).
+    Raises :class:`LLMGenerationError` for anything that cannot be applied.
+    """
+
     parsed = _parse_json_response(response_text)
-    if not isinstance(parsed, dict):
-        raise LLMGenerationError("LLM parameter response must be a JSON object.")
-    params = parsed.get("parameters", parsed)
-    if not isinstance(params, dict):
-        raise LLMGenerationError("LLM parameter response must map parameter names to values.")
-    return params
+    if not isinstance(parsed, dict) or not isinstance(parsed.get("blocks"), dict):
+        raise LLMGenerationError(
+            "LLM parameter response must be a JSON object with a 'blocks' object."
+        )
+    blocks = parsed["blocks"]
+    result: dict[str, dict[str, Any]] = {}
+    for key, model in models.items():
+        raw = blocks.get(key)
+        if raw is None:
+            continue
+        if not isinstance(raw, dict):
+            raise LLMGenerationError(
+                f"Settings for {key} ('{model.display_name}') must be a JSON object."
+            )
+        chosen = {name: value for name, value in raw.items() if value is not None}
+        result[key] = _normalize_parameters(model, chosen)
+    return result
 
 
 def _normalize_parameters(
@@ -713,7 +1155,7 @@ def _normalize_parameters(
 ) -> dict[str, Any]:
     normalized: dict[str, Any] = {}
     for name, value in parameters.items():
-        if name not in model.parameters:
+        if name not in model.parameters or name.startswith("@"):
             raise LLMGenerationError(
                 f"Parameter '{name}' is not valid for model '{model.display_name}'."
             )
