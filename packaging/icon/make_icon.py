@@ -185,10 +185,17 @@ CONCEPTS = {
 }
 
 
-def build(concept: str) -> str:
+def build(concept: str, *, tight: bool = False) -> str:
+    """The icon as SVG.
+
+    ``tight`` crops to the tile. macOS wants the inset so it has room to draw a
+    shadow; anywhere else - a README, a web page - that inset is a fifth of the
+    image spent on nothing.
+    """
+    box = f"{OFFSET} {OFFSET} {TILE} {TILE}" if tight else f"0 0 {CANVAS} {CANVAS}"
     return (
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{CANVAS}" height="{CANVAS}" '
-        f'viewBox="0 0 {CANVAS} {CANVAS}">{_backdrop()}\n  {CONCEPTS[concept]()}\n</svg>'
+        f'viewBox="{box}">{_backdrop()}\n  {CONCEPTS[concept]()}\n</svg>'
     )
 
 
@@ -252,9 +259,14 @@ def main() -> int:
     parser.add_argument(
         "--icns", action="store_true", help="Write a macOS .icns instead of a PNG"
     )
+    parser.add_argument(
+        "--tight",
+        action="store_true",
+        help="Crop to the tile, dropping the inset macOS wants for its shadow",
+    )
     args = parser.parse_args()
 
-    svg = build(args.concept)
+    svg = build(args.concept, tight=args.tight)
     if args.svg:
         args.svg.parent.mkdir(parents=True, exist_ok=True)
         args.svg.write_text(svg, encoding="utf-8")

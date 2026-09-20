@@ -1,9 +1,16 @@
+<div align="center">
+
+<!-- Decorative: the heading below carries the name, so an alt of "HelixGen
+     logo" would only make a screen reader announce it twice. -->
+<img src="docs/images/logo.png" alt="" width="128">
+
 # HelixGen
 
-[![CI](https://github.com/ORogers/HelixGen/actions/workflows/ci.yml/badge.svg)](https://github.com/ORogers/HelixGen/actions/workflows/ci.yml)
-[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-
 **Describe a guitar tone in plain English. Get it on your Line 6 HX Stomp.**
+
+[![CI](https://github.com/ORogers/HelixGen/actions/workflows/ci.yml/badge.svg)](https://github.com/ORogers/HelixGen/actions/workflows/ci.yml) [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+
+</div>
 
 HelixGen turns "warm, dark jazz tone - hollowbody into a small valve amp, light
 compression, a short room reverb" into a real Helix preset, validates it
