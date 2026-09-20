@@ -49,6 +49,32 @@ class ParameterDefinition:
                 return self.normalize(int(first_key))
         return None
 
+    def controller_range(self) -> tuple[Any, Any] | None:
+        """Return the (min, max) a snapshot controller sweeps, or None if unknown.
+
+        Helix stores the parameter's full range on the controller entry, in the
+        same type as its value: bools for switches, the device's own option
+        numbers for a discrete list, and floats for a knob.
+        """
+        if self.display_type == "boolean":
+            return (False, True)
+        if self.forward_map:
+            # Option numbers, which do not always start at zero.
+            keys: list[int] = []
+            for raw in self.forward_map:
+                try:
+                    keys.append(int(raw))
+                except ValueError:
+                    return None
+            return (min(keys), max(keys)) if keys else None
+        if self.min_value is None or self.max_value is None:
+            return None
+        if self.value_type == CONTINUOUS:
+            return (float(self.min_value), float(self.max_value))
+        if self.value_type == DISCRETE:
+            return (int(self.min_value), int(self.max_value))
+        return None
+
     def normalize(self, value: Any) -> Any:
         """Validate and normalize an input value for the preset payload.
 

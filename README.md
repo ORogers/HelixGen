@@ -100,14 +100,25 @@ python3 -m hlxgen llm-models --llm-backend ollama
   }
   ```
 
+- **Snapshots** - either format may add a `snapshots` list (up to three on HX Stomp). Each snapshot has a `name` (10 characters max on the device) and a `blocks` map, keyed by the block's zero-based index, of what it changes: `enabled` to switch a block on or off and `parameters` to re-dial it. Anything a snapshot does not mention keeps the block's own settings. See `docs/examples/snapshots_chain.json`.
+
+  ```json
+  "snapshots": [
+    {"name": "Clean", "blocks": {"1": {"enabled": false}, "2": {"parameters": {"Drive": 0.2}}}},
+    {"name": "Rhythm"},
+    {"name": "Solo", "blocks": {"4": {"enabled": true, "parameters": {"Mix": 0.3}}}}
+  ]
+  ```
+
 Both formats can be expressed as JSON or YAML. During generation, simple strings are expanded into structured blocks with validated parameter defaults. See `docs/examples/` for additional templates.
 
 ### Describe Command & LLM Prompting
 
-The `describe` subcommand converts a natural-language tone request into a preset with two LLM calls, whatever the length of the chain:
+The `describe` subcommand converts a natural-language tone request into a preset with three LLM calls, whatever the length of the chain:
 
 1. **Block selection.** The prompt carries the signal-chain rules, two few-shot examples built from real catalog names, and the whole catalog as one `name - based on` line per model, grouped by category. The user's request comes last, so the static prefix can be reused from the backend's prompt cache.
 2. **Parameters.** One call sets every block at once (cabs keep their defaults), so the model can balance gain and levels across the chain. Blocks are keyed by position, and `null` keeps a parameter at its default.
+3. **Snapshots.** One call designs the preset's three snapshots, so a described tone arrives as three distinct usable sounds (clean / crunch / lead, rhythm / solo / ambient, and so on) rather than one fixed setting. Each snapshot switches blocks on or off and re-dials the parameters it needs; `null` leaves a block as it is. `hlxgen inspect` shows the snapshots side by side.
 
 Each answer is constrained to a JSON schema: only catalog model names, and only in-range values and listed option labels, are admissible. An answer that is still rejected is asked again once, with the reason attached, before the run fails.
 
@@ -136,11 +147,15 @@ Tests rely on `helix_model_information.json`; ensure it is present in the projec
 - **cli round-trip** — generates and validates every chain in `docs/examples/`, guarding the acceptance criteria in the requirements doc.
 - **lint** — `ruff check` against the rule set pinned in `ruff.toml`. Both the ruff version and the rule selection are pinned so a ruff release cannot fail CI on its own; bump them together.
 
-## Direct USB Upload (in progress)
+## Direct USB Upload
 
-`--upload` currently automates HX Edit's GUI with AppleScript, which is macOS-only
-and cannot read anything back. Work is underway to replace it with a USB client that
-writes presets to a chosen slot and reads them off the pedal.
+`hlxgen push tone.hlx --slot N` writes a preset straight to the pedal over USB, and
+`pull` / `backup` read presets off it. The chain, each block's values and bypass
+state, the footswitch layout and the snapshots all transfer, including the knob
+positions each snapshot recalls. Only the snapshot controller is written: a preset
+that assigns an expression pedal or a footswitch to a parameter reports those as
+unwritten. `--upload-via applescript` keeps the old HX Edit GUI automation as a
+fallback.
 
 `hlxgen device-audit --symbols <path to Helix.sym>` reconciles the model catalog
 against HX Edit's symbol table, which is the lookup the device's ordinal addressing

@@ -103,6 +103,13 @@ _FEWSHOT_EXAMPLES = [
 
 _MAX_BLOCKS = 8
 
+#: An HX Stomp preset carries three snapshots. Each one becomes a distinct usable
+#: variation of the tone -- clean / rhythm / lead and the like -- rather than the
+#: same sound with blocks muted.
+SNAPSHOT_COUNT = 3
+#: Longest snapshot name the device displays.
+SNAPSHOT_NAME_LIMIT = 10
+
 logger = logging.getLogger(__name__)
 if not logger.handlers:
     handler = logging.StreamHandler()
@@ -144,7 +151,8 @@ def generate_chain_from_prompt(
 ) -> dict[str, Any]:
     """Return a signal chain dictionary generated from a natural-language prompt.
 
-    Two LLM round trips: one picks the blocks, one sets every block's parameters.
+    Three LLM round trips: one picks the blocks, one sets every block's
+    parameters, and one designs the preset's snapshots.
     Each answer is constrained to a JSON schema, and a rejected answer is re-asked
     once with the reason attached before the run fails.
 
@@ -187,6 +195,14 @@ def generate_chain_from_prompt(
     _report(f"Selected {len(resolved_models)} block(s): {names} ({elapsed:.1f}s)")
 
     _populate_block_parameters_with_llm(
+        prompt=prompt,
+        call_llm=call_llm,
+        chain=chain,
+        models=resolved_models,
+        on_progress=on_progress,
+    )
+
+    _design_snapshots_with_llm(
         prompt=prompt,
         call_llm=call_llm,
         chain=chain,
@@ -1179,3 +1195,243 @@ def _normalize_parameters(
                 f"Invalid value for parameter '{name}' on model '{model.display_name}': {exc}"
             ) from exc
     return normalized
+
+
+def _design_snapshots_with_llm(
+    prompt: str,
+    call_llm: LLMCaller,
+    chain: dict[str, Any],
+    models: list[ModelDefinition],
+    on_progress: Callable[[str], None] | None = None,
+) -> None:
+    """Design the preset's snapshots with a single LLM call.
+
+    Without this a preset is one fixed sound. Each snapshot switches blocks on or
+    off and re-dials the parameters it needs, so one preset covers several usable
+    tones -- clean, rhythm, lead -- at the tap of a footswitch.
+    """
+
+    def _report(message: str) -> None:
+        if on_progress is not None:
+            on_progress(message)
+
+    chain_title = chain.get("meta", {}).get("name") or chain.get("title") or "Generated Tone"
+
+    # Keyed by position, as the parameter round is: a chain may hold the same
+    # model twice and each copy is switched and dialled on its own.
+    targets: dict[str, tuple[ModelDefinition, list[dict[str, Any]]]] = {}
+    for index, (block_spec, model) in enumerate(zip(chain["blocks"], models, strict=True)):
+        chosen = block_spec.get("parameters", {}) if isinstance(block_spec, dict) else {}
+        summary = []
+        if "cab" not in (model.category or "").lower():
+            for entry in _summarize_parameters(model):
+                definition = model.get_parameter(entry["name"])
+                if definition.controller_range() is None:
+                    # Nothing to sweep: the device cannot put it in a snapshot.
+                    continue
+                entry["current"] = _current_value(definition, chosen.get(entry["name"]))
+                summary.append(entry)
+        targets[f"block{index + 1}"] = (model, summary)
+
+    logger.info("Designing %d snapshots", SNAPSHOT_COUNT)
+    _report(f"Designing {SNAPSHOT_COUNT} snapshots...")
+    started = time.monotonic()
+    snapshots_request = LLMRequest(
+        prompt=_compose_snapshot_prompt(
+            user_prompt=prompt, chain_title=chain_title, targets=targets
+        ),
+        schema=_snapshots_schema({key: summary for key, (_, summary) in targets.items()}),
+        schema_name="snapshots",
+    )
+    chain["snapshots"] = _ask(
+        call_llm,
+        snapshots_request,
+        lambda text: _parse_snapshots_response(
+            text, {key: model for key, (model, _) in targets.items()}
+        ),
+        on_retry=lambda: _report("Retrying snapshot design..."),
+    )
+
+    elapsed = time.monotonic() - started
+    names = ", ".join(snapshot["name"] for snapshot in chain["snapshots"])
+    logger.info("Snapshots designed in %.1fs: %s", elapsed, names)
+    _report(f"Snapshots: {names} ({elapsed:.1f}s)")
+
+
+def _current_value(definition: ParameterDefinition, chosen: Any) -> Any:
+    """What the block is set to now, written the way the answer must write it."""
+    value = definition.default_value() if chosen is None else chosen
+    if definition.display_type == "boolean" or isinstance(value, bool):
+        return bool(value)
+    if definition.forward_map and value is not None:
+        return definition.forward_map.get(str(value), value)
+    return value
+
+
+def _compose_snapshot_prompt(
+    user_prompt: str,
+    chain_title: str,
+    targets: dict[str, tuple[ModelDefinition, list[dict[str, Any]]]],
+) -> str:
+    instructions = (
+        f"You are designing the {SNAPSHOT_COUNT} snapshots of a Line 6 HX Stomp preset. "
+        "A snapshot recalls which blocks are on or off and the value of every parameter "
+        "listed below, so one preset gives the player several usable sounds at the tap of "
+        "a footswitch.\n"
+        "Rules:\n"
+        f"- Give exactly {SNAPSHOT_COUNT} snapshots, clearly different from one another but "
+        "all fitting the player's request. Pick the roles that suit it, for example "
+        "clean / crunch / high gain, rhythm / solo / ambient, or clean / rhythm / lead.\n"
+        f"- Name each one in at most {SNAPSHOT_NAME_LIMIT} characters.\n"
+        "- Every block starts on, at the value shown as 'now'. Use null for anything that "
+        "should stay as it is; only write what the snapshot changes.\n"
+        "- A clean snapshot switches drives off and lowers amp drive; a lead or high gain "
+        "one raises drive or engages a drive pedal; a solo lifts output level a little and "
+        "adds delay; an ambient one raises delay and reverb mix, feedback and decay.\n"
+        "- When you lower gain, raise the amp's channel volume a little, so the snapshots "
+        "stay even in loudness.\n"
+        "- Keep amp and cab blocks on in every snapshot.\n"
+        '- Answer with one JSON object: {"snapshots": [{"name": "Clean", "blocks": '
+        '{"block1": {"enabled": false, "parameters": {"<parameter>": value, ...}}, ...}}, ...]}'
+    )
+    blocks_text = "\n\n".join(
+        _render_snapshot_block(key, model, summary) for key, (model, summary) in targets.items()
+    )
+    return (
+        f"{instructions}\n\n"
+        f"Player request: {user_prompt.strip()}\n"
+        f"Chain title: {chain_title}\n\n"
+        f"Blocks, in signal order:\n\n{blocks_text}"
+    )
+
+
+def _render_snapshot_block(
+    key: str, model: ModelDefinition, summary: list[dict[str, Any]]
+) -> str:
+    header = f"{key}: {model.display_name} ({model.category or 'Uncategorized'})"
+    if not summary:
+        return f"{header}\n- on/off only"
+    lines = [header]
+    for entry in summary:
+        line = f"- {entry['name']}: {entry['type']}"
+        if entry["type"] in ("continuous", "number") and entry.get("min") is not None:
+            line += f" {_format_number(entry.get('min'))}..{_format_number(entry.get('max'))}"
+        elif entry["type"] == "enum":
+            line += " [" + ", ".join(entry.get("options", [])) + "]"
+        line += f", now {entry['current']}"
+        lines.append(line)
+    return "\n".join(lines)
+
+
+def _snapshots_schema(targets: dict[str, list[dict[str, Any]]]) -> dict[str, Any]:
+    """Snapshot answer schema: a fixed number of named snapshots, each listing
+    every block, with the same nullable parameter schema the parameter round uses."""
+
+    blocks: dict[str, Any] = {}
+    for key, summary in targets.items():
+        properties: dict[str, Any] = {"enabled": {"type": ["boolean", "null"]}}
+        if summary:
+            parameters = {entry["name"]: _parameter_schema(entry) for entry in summary}
+            properties["parameters"] = {
+                "type": ["object", "null"],
+                "properties": parameters,
+                "required": list(parameters),
+                "additionalProperties": False,
+            }
+        blocks[key] = {
+            "type": "object",
+            "properties": properties,
+            "required": list(properties),
+            "additionalProperties": False,
+        }
+    snapshot = {
+        "type": "object",
+        "properties": {
+            "name": {"type": "string", "maxLength": SNAPSHOT_NAME_LIMIT},
+            "blocks": {
+                "type": "object",
+                "properties": blocks,
+                "required": list(blocks),
+                "additionalProperties": False,
+            },
+        },
+        "required": ["name", "blocks"],
+        "additionalProperties": False,
+    }
+    return {
+        "type": "object",
+        "properties": {
+            "snapshots": {
+                "type": "array",
+                "items": snapshot,
+                "minItems": SNAPSHOT_COUNT,
+                "maxItems": SNAPSHOT_COUNT,
+            }
+        },
+        "required": ["snapshots"],
+        "additionalProperties": False,
+    }
+
+
+def _parse_snapshots_response(
+    response_text: str, models: dict[str, ModelDefinition]
+) -> list[dict[str, Any]]:
+    """Turn the answer into the chain's ``snapshots`` list.
+
+    Block keys are one-based in the prompt, as they are in the parameter round,
+    and zero-based indexes in a chain; nulls and blocks a snapshot does not change
+    are dropped, leaving each block's own settings to stand.
+    """
+
+    parsed = _parse_json_response(response_text)
+    snapshots = parsed.get("snapshots") if isinstance(parsed, dict) else None
+    if not isinstance(snapshots, list) or len(snapshots) != SNAPSHOT_COUNT:
+        raise LLMGenerationError(
+            f"LLM snapshot response must be a JSON object with a 'snapshots' list of "
+            f"exactly {SNAPSHOT_COUNT} entries."
+        )
+
+    result: list[dict[str, Any]] = []
+    for number, snapshot in enumerate(snapshots, start=1):
+        if not isinstance(snapshot, dict):
+            raise LLMGenerationError(f"Snapshot {number} must be a JSON object.")
+        name = snapshot.get("name")
+        if not isinstance(name, str) or not name.strip():
+            raise LLMGenerationError(f"Snapshot {number} must have a non-empty 'name'.")
+        blocks = snapshot.get("blocks") or {}
+        if not isinstance(blocks, dict):
+            raise LLMGenerationError(
+                f"Snapshot '{name}' must map block keys to their settings."
+            )
+
+        changes: dict[str, Any] = {}
+        for key, settings in blocks.items():
+            model = models.get(key)
+            if model is None:
+                raise LLMGenerationError(f"Snapshot '{name}' names unknown block '{key}'.")
+            if settings is None:
+                continue
+            if not isinstance(settings, dict):
+                raise LLMGenerationError(
+                    f"Snapshot '{name}' settings for '{model.display_name}' must be an object."
+                )
+            entry: dict[str, Any] = {}
+            enabled = settings.get("enabled")
+            if enabled is not None:
+                if not isinstance(enabled, bool):
+                    raise LLMGenerationError(
+                        f"Snapshot '{name}' 'enabled' for '{model.display_name}' must be "
+                        "true or false."
+                    )
+                entry["enabled"] = enabled
+            chosen = {
+                parameter: value
+                for parameter, value in (settings.get("parameters") or {}).items()
+                if value is not None
+            }
+            if chosen:
+                entry["parameters"] = _normalize_parameters(model, chosen)
+            if entry:
+                changes[str(int(key.removeprefix("block")) - 1)] = entry
+        result.append({"name": name.strip(), "blocks": changes})
+    return result

@@ -13,15 +13,20 @@ def _write_chain(path: Path, chain: dict[str, object]) -> None:
     path.write_text(json.dumps(chain, indent=2), encoding="utf-8")
 
 
+_DEFAULT_SNAPSHOTS = [{"name": f"Snap {n}", "blocks": {}} for n in (1, 2, 3)]
+
+
 def _fake_ollama(
     chain: dict[str, object],
     parameters: dict[str, object] | None = None,
+    snapshots: list[dict[str, object]] | None = None,
 ):
-    """Build a urlopen stub that mimics Ollama's two-round describe protocol.
+    """Build a urlopen stub that mimics Ollama's three-round describe protocol.
 
     The first call returns the block list; the second sets the parameters of
-    every block at once, and ``parameters`` is what the first block receives.
-    Each request payload is recorded on the stub's ``payloads`` list.
+    every block at once, and ``parameters`` is what the first block receives;
+    the third designs the preset's snapshots. Each request payload is recorded
+    on the stub's ``payloads`` list.
     """
 
     payloads: list[dict[str, object]] = []
@@ -32,6 +37,8 @@ def _fake_ollama(
         body: dict[str, object]
         if "Blocks to configure:" in payload["prompt"]:
             body = {"blocks": {"block1": parameters or {}}}
+        elif "Blocks, in signal order:" in payload["prompt"]:
+            body = {"snapshots": snapshots or _DEFAULT_SNAPSHOTS}
         else:
             body = chain
 
@@ -497,3 +504,60 @@ def test_cli_describe_reports_http_error(
     assert exit_code == 1
     assert "Ollama returned HTTP 404" in captured.err
     assert "/api/generate" in captured.err
+
+
+def test_cli_describe_writes_three_snapshots(
+    tmp_path: Path,
+    dataset_path: Path,
+    schema_path: Path,
+    template_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture,
+) -> None:
+    """The whole describe path, from the LLM's answer to snapshots in the file."""
+    preset_path = tmp_path / "snapshots.hlx"
+    monkeypatch.setattr(
+        "hlxgen.llm.request.urlopen",
+        _fake_ollama(
+            {"title": "Three Ways", "blocks": ["Horizon Drive", "Brit Plexi Brt", "Glitz"]},
+            {"Drive": 0.4},
+            snapshots=[
+                {
+                    "name": "Clean",
+                    "blocks": {
+                        "block1": {"enabled": False},
+                        "block2": {"parameters": {"Drive": 0.2}},
+                    },
+                },
+                {"name": "Crunch", "blocks": {"block1": {"enabled": False}}},
+                {"name": "High Gain", "blocks": {"block2": {"parameters": {"Drive": 0.8}}}},
+            ],
+        ),
+    )
+
+    exit_code = cli.main(
+        [
+            "--dataset", str(dataset_path),
+            "describe", "Versatile rock",
+            "--schema", str(schema_path),
+            "--template", str(template_path),
+            "--output", str(preset_path),
+        ]
+    )
+    assert exit_code == 0
+
+    tone = json.loads(preset_path.read_text(encoding="utf-8"))["data"]["tone"]
+    assert [tone[f"snapshot{n}"]["@name"] for n in range(3)] == ["Clean", "Crunch", "High Gain"]
+    assert [tone[f"snapshot{n}"]["blocks"]["dsp0"]["block0"] for n in range(3)] == [
+        False, False, True,
+    ]
+    drive = [tone[f"snapshot{n}"]["controllers"]["dsp0"]["block1"]["Drive"]["@value"] for n in range(3)]
+    assert drive[0] == pytest.approx(0.2)
+    assert drive[2] == pytest.approx(0.8)
+
+    capsys.readouterr()
+    assert cli.main(["inspect", str(preset_path), "--dataset", str(dataset_path)]) == 0
+    out = capsys.readouterr().out
+    assert "│ Block" in out
+    assert "Clean" in out and "High Gain" in out
+    assert "│   Drive" in out

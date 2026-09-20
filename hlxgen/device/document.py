@@ -97,6 +97,38 @@ KEY_SNAP_VALID: Final = 0
 KEY_SNAP_BLOCKS: Final = 3
 KEY_SNAP_NAME: Final = 4
 KEY_SNAP_TEMPO: Final = 5
+#: The snapshot group's current-snapshot index: ``preset[10][6]``.
+KEY_CURRENT_SNAPSHOT: Final = 6
+#: How many controller assignments the preset holds, across every source:
+#: ``preset[10][8]``. Equal to the count in ``preset[4]`` on all 126 presets read
+#: off an HX Stomp, and **load-bearing**: with it left at 0 the device shows the
+#: assignments but never recalls a snapshot's values.
+KEY_CONTROLLER_COUNT: Final = 8
+#: A snapshot's controller values: 64 entries of ``[fs_enabled, id, value]``,
+#: where ``id`` is the controller assignment the value belongs to.
+KEY_SNAP_CONTROLLERS: Final = 2
+#: An unused controller-value entry. Stale entries whose assignment is gone keep
+#: an old value and an id of 13 or 64; the device treats all of them as unused.
+UNUSED_CONTROLLER_VALUE: Final = (False, 64, None)
+
+#: Controller assignments: ``preset[4]``, a list indexed by controller source
+#: (1 EXP 1, 2 EXP 2, 9 Snapshots, ...), each a list of assignments or nil.
+#: Assignment ids are shared across sources and index every snapshot's
+#: ``KEY_SNAP_CONTROLLERS`` list.
+KEY_CONTROLLER_GROUP: Final = 4
+CONTROLLER_SNAPSHOT: Final = 9
+#: Inside an assignment: ``{0: id, 1: {...}}``, and the inner map's fields.
+KEY_CTRL_ID: Final = 0
+KEY_CTRL_BODY: Final = 1
+KEY_CTRL_SOURCE: Final = 0
+KEY_CTRL_MIN: Final = 2
+KEY_CTRL_MAX: Final = 3
+KEY_CTRL_SLOT: Final = 5
+KEY_CTRL_TARGET: Final = 6
+KEY_CTRL_MODEL_SEL: Final = 7
+#: Inside the target sub-map: which sub-model, and the parameter ordinal.
+KEY_TARGET_MODEL_SEL: Final = 28
+KEY_TARGET_PARAM: Final = 29
 
 #: Shape of a block-bypass footswitch entry, for a document whose layout is
 #: empty and so offers nothing to clone. Taken from 336 real entries read off an
@@ -395,6 +427,119 @@ class Document:
                         slots[slot][1] = bool(on)
         self.dirty = True
         return True
+
+    def set_current_snapshot(self, index: int) -> bool:
+        """Choose the snapshot the preset opens on."""
+        group = self.preset.get(KEY_SNAPSHOT_GROUP)
+        if not isinstance(group, dict) or not 0 <= index < len(self.snapshots()):
+            return False
+        group[KEY_CURRENT_SNAPSHOT] = index
+        self.dirty = True
+        return True
+
+    # -- controllers -------------------------------------------------------
+
+    def controller_assignments(self, source: int) -> list:
+        """Assignments for one controller source (e.g. ``CONTROLLER_SNAPSHOT``)."""
+        group = self.preset.get(KEY_CONTROLLER_GROUP)
+        if not isinstance(group, list) or not 0 <= source < len(group):
+            return []
+        return group[source] if isinstance(group[source], list) else []
+
+    def clear_controllers(self) -> None:
+        """Drop every controller assignment and every snapshot's controller values.
+
+        Assignments address a block by slot, so ones left over from the donor
+        would bind to whatever block the new tone put in that slot.
+        """
+        group = self.preset.get(KEY_CONTROLLER_GROUP)
+        if isinstance(group, list):
+            for source in range(len(group)):
+                group[source] = None
+        for snapshot in self.snapshots():
+            entries = snapshot.get(KEY_SNAP_CONTROLLERS) if isinstance(snapshot, dict) else None
+            if isinstance(entries, list):
+                for position in range(len(entries)):
+                    entries[position] = list(UNUSED_CONTROLLER_VALUE)
+        self._sync_controller_count()
+        self.dirty = True
+
+    def _sync_controller_count(self) -> None:
+        snapshot_group = self.preset.get(KEY_SNAPSHOT_GROUP)
+        if not isinstance(snapshot_group, dict):
+            return
+        group = self.preset.get(KEY_CONTROLLER_GROUP)
+        snapshot_group[KEY_CONTROLLER_COUNT] = sum(
+            len(source) for source in group or [] if isinstance(source, list)
+        )
+
+    def add_snapshot_controller(
+        self,
+        *,
+        slot: int,
+        parameter: int,
+        model_sel: int,
+        minimum: Any,
+        maximum: Any,
+        values: list,
+    ) -> int | None:
+        """Put one parameter under snapshot control, with a value per snapshot.
+
+        The assignment's shape is the one every snapshot assignment on a real HX
+        Stomp shares. ``values`` holds one value per snapshot, in the
+        parameter's own wire type. Returns the assignment id, or None if the
+        document has no room for another controller.
+        """
+        group = self.preset.get(KEY_CONTROLLER_GROUP)
+        snapshots = self.snapshots()
+        if not isinstance(group, list) or len(group) <= CONTROLLER_SNAPSHOT:
+            return None
+        if len(values) != len(snapshots):
+            raise DocumentError(
+                f"expected {len(snapshots)} snapshot values, got {len(values)}"
+            )
+        entries = [snapshot.get(KEY_SNAP_CONTROLLERS) for snapshot in snapshots]
+        if not all(isinstance(entry, list) for entry in entries):
+            return None
+
+        taken = {
+            assignment.get(KEY_CTRL_ID)
+            for source in group
+            if isinstance(source, list)
+            for assignment in source
+            if isinstance(assignment, dict)
+        }
+        capacity = min(len(entry) for entry in entries)
+        free = next((i for i in range(capacity) if i not in taken), None)
+        if free is None:
+            return None
+
+        assignment = {
+            KEY_CTRL_ID: free,
+            KEY_CTRL_BODY: {
+                KEY_CTRL_SOURCE: CONTROLLER_SNAPSHOT,
+                1: 4,
+                KEY_CTRL_MIN: minimum,
+                KEY_CTRL_MAX: maximum,
+                4: 0,
+                KEY_CTRL_SLOT: slot,
+                KEY_CTRL_TARGET: {
+                    KEY_TARGET_MODEL_SEL: model_sel,
+                    KEY_TARGET_PARAM: parameter,
+                    41: False,
+                },
+                KEY_CTRL_MODEL_SEL: model_sel,
+                13: False,
+            },
+        }
+        if not isinstance(group[CONTROLLER_SNAPSHOT], list):
+            group[CONTROLLER_SNAPSHOT] = []
+        group[CONTROLLER_SNAPSHOT].append(assignment)
+        for entry, value in zip(entries, values, strict=True):
+            entry[free] = [False, free, value]
+        self._sync_controller_count()
+        self.dirty = True
+        return free
 
     @property
     def modified(self) -> bool:
