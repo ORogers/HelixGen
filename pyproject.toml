@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "helixgen"
-version = "0.1.0"
+version = "0.1.1"
 description = "Describe a guitar tone in plain English and put it on a Line 6 HX Stomp."
 readme = "README.md"
 requires-python = ">=3.13"
