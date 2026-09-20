@@ -31,7 +31,7 @@
       "position": 2,
       "parameters": {
         "Mode": "Chorus",
-        "SyncSelect1": 8,
+        "SyncSelect1": "1/8",
         "TempoSync1": "On",
         "Rate": 0.42,
         "Intensity": 0.7,
@@ -79,7 +79,7 @@
       "position": 5,
       "parameters": {
         "TempoSync1": "On",
-        "SyncSelect1": 9,
+        "SyncSelect1": "1/8 Triplet",
         "Time": 0.3,
         "Feedback": 0.38,
         "WowFlutter": 0.28,

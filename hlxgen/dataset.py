@@ -9,6 +9,16 @@ class ModelCatalogError(RuntimeError):
     """Raised when the model dataset cannot be loaded or queried."""
 
 
+#: The device's own parameter types, as HX Edit's model definitions record them.
+#: ``DISCRETE`` is a stepped list -- a delay's note sync, a cab's mic, an IR
+#: slot. **Its option numbers do not always start at zero**: the value a preset
+#: stores is the parameter's own ``min`` plus the option's position in the list,
+#: so a note sync runs 1..19 and a harmoniser's interval -8..8.
+DISCRETE = 0
+CONTINUOUS = 1
+SWITCH = 2
+
+
 @dataclass(frozen=True)
 class ParameterDefinition:
     name: str
@@ -27,7 +37,7 @@ class ParameterDefinition:
     def default_value(self) -> Any:
         if self.default is not None:
             return self.normalize(self.default)
-        if self.value_type == 2 and self.reverse_map:
+        if self.value_type == SWITCH and self.reverse_map:
             # prefer a neutral entry if present
             if "False" in self.reverse_map:
                 return self.normalize("False")
@@ -40,8 +50,15 @@ class ParameterDefinition:
         return None
 
     def normalize(self, value: Any) -> Any:
-        """Validate and normalize an input value for the preset payload."""
-        if self.value_type == 1:
+        """Validate and normalize an input value for the preset payload.
+
+        The result is the number a preset stores, which for a discrete
+        parameter is the device's own option number and not the option's
+        position in the list. Writing the position instead lands the block on a
+        neighbouring option -- a dotted eighth delay arrives as a quarter -- and
+        does it silently, because the wrong number is still a valid option.
+        """
+        if self.value_type == CONTINUOUS:
             try:
                 numeric = float(value)
             except (TypeError, ValueError) as exc:
@@ -53,9 +70,11 @@ class ParameterDefinition:
             if self.max_value is not None:
                 numeric = min(self.max_value, numeric)
             return numeric
-        # Some option parameters carry no value type in the dataset, only their
-        # option maps; they are stored as option numbers like any other enum.
-        if self.value_type == 2 or (self.value_type is None and self.reverse_map):
+        # A dataset entry that predates the device's own types carries only its
+        # option map; it is stored as an option number like any other list.
+        if self.value_type in (DISCRETE, SWITCH) or (
+            self.value_type is None and self.reverse_map
+        ):
             if self.display_type == "boolean" or self.name in {"@enabled", "@stereo"}:
                 if isinstance(value, str):
                     lowered = value.strip().lower()
@@ -82,7 +101,16 @@ class ParameterDefinition:
                     raise ModelCatalogError(
                         f"Parameter '{self.name}' expects integer enum value"
                     ) from exc
-            if str(numeric) not in self.forward_map:
+            if self.forward_map:
+                if str(numeric) not in self.forward_map:
+                    raise ModelCatalogError(
+                        f"Value {numeric} out of range for parameter '{self.name}'"
+                    )
+            elif (self.min_value is not None and numeric < self.min_value) or (
+                self.max_value is not None and numeric > self.max_value
+            ):
+                # A stepped parameter the dataset has no labels for, such as a
+                # vocoder's formant slot: its range is all there is to check.
                 raise ModelCatalogError(
                     f"Value {numeric} out of range for parameter '{self.name}'"
                 )
