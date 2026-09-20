@@ -45,12 +45,14 @@ class PreviewPanel(QWidget):
         self._empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         self._chain_host = QWidget()
+        self._chain_host.setObjectName("chainHost")
         self._chain_layout = QHBoxLayout(self._chain_host)
         self._chain_layout.setContentsMargins(2, 2, 2, 8)
         self._chain_layout.setSpacing(0)
         self._chain_layout.addStretch(1)
 
         self._scroll = QScrollArea()
+        self._scroll.setObjectName("chainScroll")
         self._scroll.setWidget(self._chain_host)
         self._scroll.setWidgetResizable(True)
         self._scroll.setFrameShape(QFrame.Shape.NoFrame)

@@ -51,16 +51,40 @@ def no_real_device(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr("hlxgen_ui.workers.read_slot_chain", _no_chain)
 
 
-def _stub_llm(monkeypatch: pytest.MonkeyPatch, *, title: str = "Smoke Test Tone") -> None:
-    chain = json.dumps({"title": title, "blocks": ["Horizon Drive"]})
-    params = json.dumps({"parameters": {}})
-    calls: list[str] = []
+#: What the stubbed Ollama server reports: installed models and their thinking levels.
+FAKE_OLLAMA_MODELS = {
+    "gpt-oss:20b": ("low", "medium", "high"),
+    "deepseek-r1:8b": ("none", "low"),
+    "llama3.2:latest": (),
+}
 
-    def fake_call(endpoint: str, model_name: str, prompt: str) -> str:
-        calls.append(prompt)
-        return chain if len(calls) == 1 else params
+
+@pytest.fixture(autouse=True)
+def no_real_ollama(monkeypatch: pytest.MonkeyPatch):
+    """Opening Settings lists the installed models; never ask a real server."""
+    monkeypatch.setattr(
+        "hlxgen_ui.workers.list_llm_models", lambda backend, endpoint: list(FAKE_OLLAMA_MODELS)
+    )
+    monkeypatch.setattr(
+        "hlxgen_ui.workers.supported_reasoning_efforts",
+        lambda backend, model, endpoint=None: FAKE_OLLAMA_MODELS[model],
+    )
+
+
+def _stub_llm(
+    monkeypatch: pytest.MonkeyPatch, *, title: str = "Smoke Test Tone"
+) -> list[dict[str, object]]:
+    """Answer both LLM rounds; returns the options each call was made with."""
+    chain = json.dumps({"title": title, "blocks": ["Horizon Drive"]})
+    params = json.dumps({"blocks": {"block1": {}}})
+    calls: list[dict[str, object]] = []
+
+    def fake_call(endpoint: str, model_name: str, llm_request, **options) -> str:
+        calls.append({"model": model_name, **options})
+        return chain if llm_request.schema_name == "chain" else params
 
     monkeypatch.setattr("hlxgen.llm._call_ollama", fake_call)
+    return calls
 
 
 def test_main_window_constructs_without_a_device(qtbot):
@@ -194,7 +218,7 @@ def test_generate_flow_reports_llm_failure(
     qtbot, project_dataset_files: Path, monkeypatch: pytest.MonkeyPatch
 ):
     monkeypatch.setattr(
-        "hlxgen.llm._call_ollama", lambda endpoint, model_name, prompt: "not json"
+        "hlxgen.llm._call_ollama", lambda endpoint, model_name, llm_request, **_: "not json"
     )
 
     window = MainWindow()
@@ -222,7 +246,7 @@ def test_close_while_a_worker_runs_does_not_tear_down_the_thread(
 
     release = threading.Event()
 
-    def slow_call(endpoint: str, model_name: str, prompt: str) -> str:
+    def slow_call(endpoint: str, model_name: str, llm_request, **_) -> str:
         release.wait(timeout=5)
         return json.dumps({"title": "Slow Tone", "blocks": ["Horizon Drive"]})
 
@@ -317,10 +341,92 @@ def test_settings_page_drives_generation(qtbot):
 
     assert not hasattr(window.prompt_panel, "_backend_combo")
 
-    window.settings_page._ollama_model.setText("llama3.2:latest")
+    window.settings_page._ollama_model.setEditText("llama3.2:latest")
     window.settings_page._slot_count.setValue(32)
     assert window._settings.ollama_model == "llama3.2:latest"
     assert window._settings.slot_count == 32
+
+
+def _open_settings(qtbot, window) -> None:
+    window.show()
+    window._settings_button.click()
+    qtbot.waitUntil(
+        lambda: window.settings_page._ollama_model.count() == len(FAKE_OLLAMA_MODELS),
+        timeout=3000,
+    )
+
+
+def test_settings_lists_installed_ollama_models(qtbot):
+    window = MainWindow()
+    qtbot.addWidget(window)
+    _open_settings(qtbot, window)
+
+    combo = window.settings_page._ollama_model
+    assert [combo.itemText(i) for i in range(combo.count())] == list(FAKE_OLLAMA_MODELS)
+    # The typed choice survives the list arriving.
+    assert combo.currentText() == "gpt-oss:20b"
+
+
+def test_thinking_level_follows_what_the_model_supports(qtbot):
+    window = MainWindow()
+    qtbot.addWidget(window)
+    _open_settings(qtbot, window)
+    page = window.settings_page
+
+    def enabled_levels() -> list[str]:
+        model = page._thinking.model()
+        return [
+            page._thinking.itemData(row)
+            for row in range(page._thinking.count())
+            if model.item(row).isEnabled()
+        ]
+
+    assert enabled_levels() == ["low", "medium", "high"]
+    assert window._settings.reasoning_effort == "low"
+
+    # A level gpt-oss doesn't offer is greyed out, so picking Max from the
+    # OpenAI list and switching back lands on the nearest one it does offer.
+    page._backend_combo.setCurrentIndex(page._backend_combo.findData("openai"))
+    assert enabled_levels() == ["none", "low", "medium", "high", "xhigh", "max"]
+    page._thinking.setCurrentIndex(page._thinking.findData("max"))
+    assert window._settings.reasoning_effort == "max"
+
+    page._backend_combo.setCurrentIndex(page._backend_combo.findData("ollama"))
+    assert window._settings.reasoning_effort == "high"
+    assert page._thinking.currentText() == "High"
+    assert "doesn't offer Max" in page._thinking_hint.text()
+
+    page._ollama_model.setEditText("llama3.2:latest")
+    assert not page._thinking.isEnabled()
+    assert "doesn't think" in page._thinking_hint.text()
+
+
+def test_openai_offers_only_the_gpt_5_6_models(qtbot):
+    window = MainWindow()
+    qtbot.addWidget(window)
+    page = window.settings_page
+
+    page._backend_combo.setCurrentIndex(page._backend_combo.findData("openai"))
+    offered = [page._openai_model.itemData(i) for i in range(page._openai_model.count())]
+    assert offered == ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"]
+    assert window._settings.openai_model == "gpt-5.6-terra"
+
+    page._openai_model.setCurrentIndex(page._openai_model.findData("gpt-5.6-luna"))
+    assert window._settings.openai_model == "gpt-5.6-luna"
+
+
+def test_thinking_level_and_context_reach_the_llm(qtbot, project_dataset_files, monkeypatch):
+    calls = _stub_llm(monkeypatch)
+    window = MainWindow()
+    qtbot.addWidget(window)
+    page = window.settings_page
+
+    page._thinking.setCurrentIndex(page._thinking.findData("medium"))
+    page._num_ctx.setValue(16384)
+    _generate(qtbot, window)
+
+    assert [call["think"] for call in calls] == ["medium", "medium"]
+    assert [call["num_ctx"] for call in calls] == [16384, 16384]
 
 
 def test_settings_button_swaps_pages(qtbot):

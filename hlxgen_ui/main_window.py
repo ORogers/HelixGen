@@ -275,6 +275,8 @@ class MainWindow(QMainWindow):
             ollama_model=self._settings.ollama_model,
             ollama_endpoint=self._settings.ollama_endpoint,
             openai_model=self._settings.openai_model,
+            reasoning_effort=self._settings.reasoning_effort,
+            num_ctx=self._settings.num_ctx,
         )
 
         self.prompt_panel.set_busy(True)

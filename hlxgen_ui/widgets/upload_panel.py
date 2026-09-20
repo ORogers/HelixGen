@@ -72,7 +72,7 @@ class UploadPanel(QWidget):
 
         self._mode_label = QLabel("HX Edit mode")
 
-        self._auto_upload = QCheckBox("Upload automatically after generating")
+        self._auto_upload = QCheckBox("Upload after generating")
         self._auto_upload.setChecked(True)
         self._auto_upload.setToolTip(
             "When a tone finishes generating, send it straight to the selected "
@@ -91,6 +91,9 @@ class UploadPanel(QWidget):
 
         form = QFormLayout()
         form.setSpacing(8)
+        # Labels above their fields: this column is narrow, and beside the
+        # fields the labels were squeezed to nothing.
+        form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapAllRows)
         form.addRow("Transport", self._transport_combo)
         form.addRow(self._mode_label, self._mode_combo)
 

@@ -9,6 +9,7 @@ generation visibly progresses instead of sitting behind a bare spinner.
 
 from __future__ import annotations
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QLabel, QListWidget, QListWidgetItem, QVBoxLayout, QWidget
 
 from ..style import card_layout_margins, make_card
@@ -31,6 +32,10 @@ class GenerationPanel(QWidget):
         self._steps = QListWidget()
         # A compact log: it is progress, not the output.
         self._steps.setMaximumHeight(130)
+        # Long steps (a full output path) are shortened in the middle rather
+        # than growing a horizontal scrollbar; the tooltip keeps the whole text.
+        self._steps.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._steps.setTextElideMode(Qt.TextElideMode.ElideMiddle)
         self._steps.hide()
 
         layout = QVBoxLayout(self)
@@ -49,7 +54,9 @@ class GenerationPanel(QWidget):
         self._refresh_style()
 
     def add_step(self, message: str) -> None:
-        self._steps.addItem(QListWidgetItem(message))
+        item = QListWidgetItem(message)
+        item.setToolTip(message)
+        self._steps.addItem(item)
         self._steps.scrollToBottom()
 
     def finish_success(self, message: str) -> None:

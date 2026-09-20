@@ -133,7 +133,19 @@ QComboBox:focus {
 
 QComboBox::drop-down {
     border: none;
-    width: 22px;
+    width: 28px;
+}
+
+/* Icon paths are relative to this file's icons/ folder; __main__ resolves
+   {icons} to an absolute path when it loads the sheet. */
+QComboBox::down-arrow {
+    image: url({icons}/chevron-down.svg);
+    width: 12px;
+    height: 12px;
+}
+
+QComboBox:editable {
+    padding-left: 8px;
 }
 
 QComboBox QAbstractItemView {
@@ -259,6 +271,25 @@ QLabel#slotStatus, QLabel#previewEmpty, QLabel#generationEmpty {
     font-style: italic;
 }
 
+QLabel#fieldHint {
+    color: #75777f;
+    font-size: 9pt;
+}
+
+QComboBox:disabled {
+    color: #6b6e76;
+}
+
+QComboBox QAbstractItemView::item:disabled {
+    color: #5b5d64;
+}
+
+QComboBox QLineEdit {
+    background: transparent;
+    border: none;
+    padding: 0;
+}
+
 QLabel#sectionLabel {
     color: #93969f;
     font-weight: 600;
@@ -277,6 +308,13 @@ QFrame#divider {
 }
 
 /* -- Signal chain ------------------------------------------------------- */
+
+/* The chain scrolls on the card itself, not on Qt's default grey viewport. */
+QScrollArea#chainScroll,
+QScrollArea#chainScroll > QWidget,
+QWidget#chainHost {
+    background: transparent;
+}
 
 QWidget#chip {
     background: #26272e;
@@ -349,4 +387,35 @@ QSpinBox {
 
 QSpinBox:focus {
     border: 1px solid #7c5cff;
+}
+
+QSpinBox::up-button, QSpinBox::down-button {
+    border: none;
+    background: transparent;
+    width: 24px;
+}
+
+QSpinBox::up-button {
+    subcontrol-position: top right;
+}
+
+QSpinBox::down-button {
+    subcontrol-position: bottom right;
+}
+
+QSpinBox::up-button:hover, QSpinBox::down-button:hover {
+    background: #2e3037;
+    border-radius: 4px;
+}
+
+QSpinBox::up-arrow {
+    image: url({icons}/chevron-up.svg);
+    width: 10px;
+    height: 10px;
+}
+
+QSpinBox::down-arrow {
+    image: url({icons}/chevron-down.svg);
+    width: 10px;
+    height: 10px;
 }
