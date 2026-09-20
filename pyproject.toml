@@ -47,7 +47,7 @@ dev = [
     "pytest-qt>=4.4",
     # Pinned to match the rule set in ruff.toml, exactly as CI pins it; bump the
     # two together so a ruff release cannot fail the build on its own.
-    "ruff==0.16.7",
+    "ruff==0.16.8",
 ]
 
 [project.urls]
