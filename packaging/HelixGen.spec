@@ -10,12 +10,30 @@
 # remove.
 
 import ctypes.util
+from importlib.metadata import PackageNotFoundError, version as _version
 from pathlib import Path
 
 from PyInstaller.utils.hooks import collect_data_files
 
 SPEC_DIR = Path(SPECPATH)
 PROJECT_ROOT = SPEC_DIR.parent
+
+
+def _app_version() -> str:
+    """The version pyproject.toml declares, read back from the install.
+
+    Written out here too, it would be a third copy to forget: a .app labelled
+    0.1.0 built from a v0.2.0 tag looks entirely correct and is not. The build
+    installs the package before running this, so the metadata is there.
+    """
+    try:
+        return _version("helixgen")
+    except PackageNotFoundError:  # pragma: no cover - only in an odd build env
+        print("WARNING: helixgen is not installed; the bundle will be labelled 0.0.0")
+        return "0.0.0"
+
+
+APP_VERSION = _app_version()
 
 
 def _libusb() -> list[tuple[str, str]]:
@@ -108,11 +126,11 @@ app = BUNDLE(
     name="HelixGen.app",
     icon=str(_icon) if _icon.exists() else None,
     bundle_identifier="dev.orogers.helixgen",
-    version="0.1.0",
+    version=APP_VERSION,
     info_plist={
         "CFBundleName": "HelixGen",
         "CFBundleDisplayName": "HelixGen",
-        "CFBundleShortVersionString": "0.1.0",
+        "CFBundleShortVersionString": APP_VERSION,
         "LSMinimumSystemVersion": "12.0",
         "NSHumanReadableCopyright": "Copyright 2025 Oliver Rogers. Apache-2.0.",
         # Without this macOS runs the app at 72 dpi and every panel renders

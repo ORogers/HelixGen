@@ -58,6 +58,12 @@ change alters a path it describes, update it in the same PR.
 are pinned deliberately, so that a ruff release cannot fail the build on its
 own.
 
+## Releases
+
+The version lives in `pyproject.toml` alone; everything else reads it back from
+the installed metadata. Tag `vX.Y.Z` on `main` and the release workflow does the
+rest. See [packaging/README.md](packaging/README.md#cutting-a-release).
+
 ## Style
 
 Match the code around you. This codebase leans on comments and docstrings that

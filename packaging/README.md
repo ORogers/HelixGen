@@ -1,5 +1,40 @@
 # Packaging
 
+## Cutting a release
+
+1. **Bump the version** in `pyproject.toml`. That is the only place it is
+   written: the wheel, `helixgen --version` and the `.app`'s `Info.plist` all
+   read it back from the installed metadata.
+2. **Merge to `main`.** The workflow runs from the tagged commit, so the tag
+   has to point at a commit that has it.
+3. **Tag and push:**
+
+   ```bash
+   git checkout main && git pull
+   git tag -a v0.2.0 -m "v0.2.0"
+   git push origin v0.2.0
+   ```
+
+4. The workflow checks the tag matches `pyproject.toml`, builds the wheel, the
+   sdist and `HelixGen.app`, runs the bundle's self-test, wraps it in a `.dmg`,
+   and attaches everything with a `SHA256SUMS` file to a GitHub release whose
+   notes are generated from the merged PRs.
+
+To rehearse without publishing, run the workflow manually from the Actions tab:
+it builds and checks everything and skips the publish step.
+
+A release from a private repository is visible only to people who can see the
+repository. Make it public first if the `.dmg` is meant to be downloadable.
+
+### If something goes wrong
+
+Delete the tag and the draft release, fix, and tag again:
+
+```bash
+git push origin :refs/tags/v0.2.0
+gh release delete v0.2.0 --yes
+```
+
 ## The macOS app
 
 ```bash

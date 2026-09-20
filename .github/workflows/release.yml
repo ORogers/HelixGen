@@ -16,8 +16,30 @@ env:
   PYTHON_VERSION: "3.13"
 
 jobs:
+  # A tag that disagrees with pyproject.toml produces a v0.2.0 release full of
+  # 0.1.0 artefacts, which looks right everywhere except the file names. Fail
+  # before anything is built rather than after it is published.
+  version:
+    name: tag matches the version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compare the tag with pyproject.toml
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          declared=$(python -c "import tomllib,pathlib; print(tomllib.loads(pathlib.Path('pyproject.toml').read_text())['project']['version'])")
+          tagged="${GITHUB_REF_NAME#v}"
+          echo "pyproject: $declared"
+          echo "tag:       $tagged"
+          if [ "$declared" != "$tagged" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match version $declared in pyproject.toml"
+            exit 1
+          fi
+
   distributions:
     name: wheel and sdist
+    needs: version
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -39,6 +61,7 @@ jobs:
 
   app:
     name: macOS app
+    needs: version
     # arm64. An Intel build would need its own job and its own runner; nobody
     # has asked for one.
     runs-on: macos-14
