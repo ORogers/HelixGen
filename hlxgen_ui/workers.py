@@ -1,8 +1,8 @@
 """Background QThread workers.
 
-LLM calls, USB reads and uploads are all blocking I/O, so none of them may run
-on the Qt UI thread - each gets its own QThread here that emits Qt signals
-back to the main thread instead of returning a value directly.
+LLM calls, model listing, USB reads and uploads are all blocking I/O, so none
+of them may run on the Qt UI thread - each gets its own QThread here that emits
+Qt signals back to the main thread instead of returning a value directly.
 
 **Every live worker is also held in :data:`_LIVE_WORKERS`.** Destroying a
 QThread object while its thread is still running aborts the process, and at
@@ -18,7 +18,7 @@ from pathlib import Path
 from PySide6.QtCore import QThread, Signal
 
 from hlxgen.dataset import ModelCatalogError
-from hlxgen.llm import LLMGenerationError
+from hlxgen.llm import LLMGenerationError, list_llm_models, supported_reasoning_efforts
 from hlxgen.validator import ValidationError
 
 from .device import (
@@ -82,6 +82,30 @@ class GenerationWorker(_Worker):
             self.failed.emit(str(exc))
             return
         self.succeeded.emit(result)
+
+
+class ModelListWorker(_Worker):
+    """Lists the models installed on an Ollama server, with the thinking levels
+    each one supports. Both answers come from the server, so this runs off the
+    UI thread."""
+
+    succeeded = Signal(list)  # list[tuple[str, tuple[str, ...]]]
+    failed = Signal(str)
+
+    def __init__(self, endpoint: str, parent=None) -> None:
+        super().__init__(parent)
+        self._endpoint = endpoint
+
+    def run(self) -> None:
+        try:
+            models = [
+                (model, supported_reasoning_efforts("ollama", model, self._endpoint))
+                for model in list_llm_models("ollama", self._endpoint)
+            ]
+        except LLMGenerationError as exc:
+            self.failed.emit(str(exc))
+            return
+        self.succeeded.emit(models)
 
 
 class DeviceScanWorker(_Worker):

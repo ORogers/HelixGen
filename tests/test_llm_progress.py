@@ -8,18 +8,19 @@ omitted.
 """
 
 import json
+import re
 from pathlib import Path
 
 import pytest
 
 from hlxgen.dataset import ModelCatalog
-from hlxgen.llm import generate_chain_from_prompt
+from hlxgen.llm import LLMRequest, generate_chain_from_prompt
 
 
-def _fake_call(endpoint: str, model_name: str, prompt: str) -> str:
+def _fake_call(endpoint: str, model_name: str, llm_request: LLMRequest, **_: object) -> str:
     _ = endpoint, model_name
-    if "Available parameters:" in prompt:
-        return json.dumps({"parameters": {}})
+    if llm_request.schema_name == "parameters":
+        return json.dumps({"blocks": {"block1": {}}})
     return json.dumps({"title": "Clean Tone", "blocks": ["Horizon Drive"]})
 
 
@@ -52,9 +53,11 @@ def test_on_progress_receives_ordered_status_messages(
     )
 
     assert messages[0] == "Requesting initial block selection..."
-    assert any("Selected 1 block(s): Horizon Drive" in m for m in messages)
-    assert any("Setting parameters for block 1/1: Horizon Drive" in m for m in messages)
-    assert messages[-1] == "Chain generation complete."
+    assert any(m.startswith("Selected 1 block(s): Horizon Drive (") for m in messages)
+    assert "Setting parameters for 1 block(s)..." in messages
+    assert any(m.startswith("Parameters set for 1 block(s) (") for m in messages)
+    # Each LLM step and the whole run report how long they took.
+    assert re.fullmatch(r"Chain generation complete \(\d+\.\ds total\)\.", messages[-1])
 
 
 def test_on_progress_reports_cab_block_skip(
@@ -67,10 +70,10 @@ def test_on_progress_reports_cab_block_skip(
     if cab_model is None:
         pytest.skip("dataset has no cab-category model to exercise the skip path")
 
-    def fake_call(endpoint: str, model_name: str, prompt: str) -> str:
+    def fake_call(endpoint: str, model_name: str, llm_request: LLMRequest, **_: object) -> str:
         _ = endpoint, model_name
-        if "Available parameters:" in prompt:
-            return json.dumps({"parameters": {}})
+        if llm_request.schema_name == "parameters":
+            return json.dumps({"blocks": {}})
         return json.dumps({"title": "Cab Test", "blocks": [cab_model.display_name]})
 
     monkeypatch.setattr("hlxgen.llm._call_ollama", fake_call)

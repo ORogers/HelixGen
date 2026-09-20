@@ -53,7 +53,9 @@ class ParameterDefinition:
             if self.max_value is not None:
                 numeric = min(self.max_value, numeric)
             return numeric
-        if self.value_type == 2:
+        # Some option parameters carry no value type in the dataset, only their
+        # option maps; they are stored as option numbers like any other enum.
+        if self.value_type == 2 or (self.value_type is None and self.reverse_map):
             if self.display_type == "boolean" or self.name in {"@enabled", "@stereo"}:
                 if isinstance(value, str):
                     lowered = value.strip().lower()

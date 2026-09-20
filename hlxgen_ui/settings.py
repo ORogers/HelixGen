@@ -5,17 +5,21 @@ backend plumbing next to the one field that actually describes a tone. They
 live here instead, edited on their own page, so the workspace only shows what
 a person uses on every run.
 
-Defaults mirror ``hlxgen describe``'s argparse defaults (``hlxgen/cli.py``),
-so the UI behaves like the CLI out of the box.
+The LLM defaults come from ``hlxgen.llm``, the same constants ``hlxgen
+describe`` uses, so the UI behaves like the CLI out of the box.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-DEFAULT_OLLAMA_MODEL = "gpt-oss:20b"
-DEFAULT_OLLAMA_ENDPOINT = "http://localhost:11434/api/generate"
-DEFAULT_OPENAI_MODEL = "gpt-5-mini-2025-08-07"
+from hlxgen.llm import (
+    DEFAULT_NUM_CTX,
+    DEFAULT_OLLAMA_ENDPOINT,
+    DEFAULT_OLLAMA_MODEL,
+    DEFAULT_OPENAI_MODEL,
+    DEFAULT_REASONING_EFFORT,
+)
 
 #: How many slots a refresh sweeps. Each one costs a document read, so this is
 #: a trade between how much of the pedal you see and how long Refresh takes.
@@ -35,4 +39,6 @@ class Settings:
     ollama_model: str = DEFAULT_OLLAMA_MODEL
     ollama_endpoint: str = DEFAULT_OLLAMA_ENDPOINT
     openai_model: str = DEFAULT_OPENAI_MODEL
+    reasoning_effort: str = DEFAULT_REASONING_EFFORT
+    num_ctx: int = DEFAULT_NUM_CTX
     slot_count: int = DEFAULT_SLOT_COUNT

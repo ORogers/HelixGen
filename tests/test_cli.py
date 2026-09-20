@@ -17,17 +17,21 @@ def _fake_ollama(
     chain: dict[str, object],
     parameters: dict[str, object] | None = None,
 ):
-    """Build a urlopen stub that mimics Ollama's two-stage describe protocol.
+    """Build a urlopen stub that mimics Ollama's two-round describe protocol.
 
-    The first call returns the block list; hlxgen then makes one follow-up call
-    per block asking for that block's parameters.
+    The first call returns the block list; the second sets the parameters of
+    every block at once, and ``parameters`` is what the first block receives.
+    Each request payload is recorded on the stub's ``payloads`` list.
     """
 
+    payloads: list[dict[str, object]] = []
+
     def fake_urlopen(request_obj: Any, timeout: float | None = None):
-        prompt = json.loads(request_obj.data.decode("utf-8"))["prompt"]
+        payload = json.loads(request_obj.data.decode("utf-8"))
+        payloads.append(payload)
         body: dict[str, object]
-        if "Available parameters:" in prompt:
-            body = {"parameters": parameters or {}}
+        if "Blocks to configure:" in payload["prompt"]:
+            body = {"blocks": {"block1": parameters or {}}}
         else:
             body = chain
 
@@ -44,6 +48,7 @@ def _fake_ollama(
 
         return _Response()
 
+    fake_urlopen.payloads = payloads
     return fake_urlopen
 
 

@@ -29,7 +29,15 @@ from hlxgen.cli import _default_describe_output as default_describe_output
 from hlxgen.dataset import ModelCatalog
 from hlxgen.generator import generate_preset
 from hlxgen.io import load_json_file
-from hlxgen.llm import LLMGenerationError, generate_chain_from_prompt
+from hlxgen.llm import (
+    DEFAULT_NUM_CTX,
+    DEFAULT_OLLAMA_ENDPOINT,
+    DEFAULT_OLLAMA_MODEL,
+    DEFAULT_OPENAI_MODEL,
+    DEFAULT_REASONING_EFFORT,
+    LLMGenerationError,
+    generate_chain_from_prompt,
+)
 from hlxgen.validator import PresetValidator
 
 __all__ = [
@@ -58,8 +66,8 @@ class GenerationValidationError(RuntimeError):
 class GenerationOptions:
     """Everything needed to turn a tone prompt into a written ``.hlx`` file.
 
-    Defaults mirror ``hlxgen describe``'s argparse defaults
-    (``hlxgen/cli.py``) so the UI's out-of-the-box behaviour matches the CLI.
+    The LLM defaults are ``hlxgen.llm``'s, the same ones ``hlxgen describe``
+    uses, so the UI's out-of-the-box behaviour matches the CLI.
     """
 
     prompt: str
@@ -67,9 +75,11 @@ class GenerationOptions:
     template: Path = DEFAULT_TEMPLATE_PATH
     schema: Path = DEFAULT_SCHEMA
     backend: str = "ollama"
-    ollama_model: str = "gpt-oss:20b"
-    ollama_endpoint: str = "http://localhost:11434/api/generate"
-    openai_model: str = "gpt-5-mini-2025-08-07"
+    ollama_model: str = DEFAULT_OLLAMA_MODEL
+    ollama_endpoint: str = DEFAULT_OLLAMA_ENDPOINT
+    openai_model: str = DEFAULT_OPENAI_MODEL
+    reasoning_effort: str = DEFAULT_REASONING_EFFORT
+    num_ctx: int = DEFAULT_NUM_CTX
     output: Path | None = None
     name: str | None = None
     author: str | None = None
@@ -106,6 +116,8 @@ def generate_tone(
         endpoint=options.ollama_endpoint,
         backend=options.backend,
         openai_model=options.openai_model,
+        reasoning_effort=options.reasoning_effort,
+        num_ctx=options.num_ctx,
         on_progress=on_progress,
     )
 

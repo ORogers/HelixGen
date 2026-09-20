@@ -39,7 +39,7 @@ flowchart TD
     validate --> v1["load_json_file()<br>validate_structural + validate_semantic"] --> v2["--report → JSON"] --> vx(["exit 0 / 1"])
 
     generate --> g1["load_chain_spec()<br>.json · .yaml · .hlxchain"] --> spine
-    describe --> d1["N+1 LLM round-trips<br>(see section 2)"] --> spine
+    describe --> d1["2 LLM round-trips<br>(see section 2)"] --> spine
 
     spine["_generate_from_chain(chain, args, catalog, template)"]
     spine --> gp["generator.generate_preset()<br>template ⊕ dataset defaults ⊕ chain parameters"]
@@ -66,30 +66,36 @@ A "chain" is a plain dict with an ordered `blocks` list plus optional `meta`,
 suffix is rejected before the file is opened.
 
 `describe` synthesises one instead, and this is where the tool spends nearly all of
-its wall-clock time. It makes **N+1 model calls**: one to pick the blocks, then one
-more per block to choose that block's parameter values. Both rounds go through the
-same `call_llm` closure, so the backend choice applies to block selection and
-knob-setting alike.
+its wall-clock time. The desktop UI (`hlxgen_ui.generation.generate_tone`) takes the
+same path. It makes **two model calls** however long the chain is: one to pick the
+blocks, then one to set every block's parameters. Both go through the same
+`call_llm` closure, so the backend, model and thinking level apply to both rounds.
 
 ```mermaid
 flowchart TD
     start["hlxgen describe '&lt;tone request&gt;' --llm-backend …"] --> pick{{"_build_llm_caller(backend)"}}
-    pick -- "'ollama' (default)" --> ol["POST /api/generate · stream=false<br>urllib.request, no third-party client<br>HTTP 404 → hint about the endpoint path"]
-    pick -- "'openai'" --> oa["client.responses.create(model, input)<br>OPENAI_API_KEY from env, else a .env scan<br>cwd → every parent → package → repo root"]
+    pick -- "'ollama' (default)" --> ol["POST /api/generate · stream=false<br>format = response schema (not for gpt-oss)<br>think = level · options.num_ctx · keep_alive 30m"]
+    pick -- "'openai'" --> oa["client.responses.create(model, input,<br>reasoning.effort, strict json_schema)<br>OPENAI_API_KEY from env, else a .env scan"]
 
-    ol --> closure["call_llm(prompt) → str"]
+    ol --> closure["call_llm(LLMRequest: prompt + schema) → str"]
     oa --> closure
 
-    closure --> r1["ROUND 1 — block selection<br>_compose_prompt() bundles the minimal title+blocks schema,<br>one example object, two few-shot pairs built from real catalog<br>names, and the whole catalog grouped by category"]
-    r1 --> parse["_parse_json_response()<br>strip ``` fences → json.loads → retry on first '{' … last '}'<br>reject unless a non-empty title and blocks list are present"]
-    parse --> resolve["catalog.get(name) for every entry<br>matched case-insensitively on display and internal names"]
-    resolve -- "invented name" --> fail(["LLMGenerationError → exit 1"])
-    resolve --> r2["ROUNDS 2 … N — one call per block<br>skipped when the category contains 'cab', or the model has<br>no non-@ parameters<br>_compose_parameter_prompt() → call_llm → _normalize_parameters()<br>values clamped to range, enum labels mapped back to ints"]
-    r2 --> out["chain dict → the shared spine in section 1"]
+    closure --> r1["ROUND 1 - block selection<br>_compose_prompt(): rules, two few-shot pairs from real catalog<br>names, the catalog as 'name - based on' lines by category,<br>then the user goal last (cacheable prefix)<br>schema: blocks ∈ catalog display names"]
+    r1 --> parse["_parse_chain_response()<br>json.loads (fence/brace fallback) → catalog.get(name) per block"]
+    parse -- "rejected" --> retry1["re-ask once with the reason appended"] --> parse
+    parse -- "rejected twice" --> fail(["LLMGenerationError → exit 1"])
+    parse --> r2["ROUND 2 - all parameters in one call<br>cabs and blocks without non-@ parameters keep defaults<br>schema: block1…blockN → every parameter nullable,<br>numbers in range, options by label"]
+    r2 --> norm["_parse_parameters_response() → _normalize_parameters()<br>null = keep default · labels mapped to option numbers"]
+    norm -- "rejected" --> retry2["re-ask once with the reason appended"] --> norm
+    norm --> out["chain dict → the shared spine in section 1"]
 ```
 
-The catalog is the only authority on names: anything the model invents fails
-`catalog.get` and aborts the run before a preset is built.
+The catalog is the only authority on names: the schema only admits catalog names,
+and a name that still slips through (gpt-oss on Ollama runs without a schema,
+because Ollama 0.33 returns empty text for it whenever one is set) is re-asked once
+and then aborts the run before a preset is built. Every call is timed; the Ollama
+and OpenAI token counts are logged, and the UI's Generation panel shows each
+round's duration.
 
 ## 3. Assembling the preset
 
@@ -192,8 +198,8 @@ Three subcommands never write a preset:
   first use and reused for the rest of the process, so the key is resolved once per
   run.
 - **Cab blocks are never parameterised by the model.** Any model whose category
-  contains "cab" keeps its dataset defaults, saving a round trip on a block whose
-  controls rarely carry the tone request.
+  contains "cab" keeps its dataset defaults; their controls (and the IR slot lists)
+  rarely carry the tone request.
 
 ## Exit codes
 

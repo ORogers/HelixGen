@@ -4,6 +4,19 @@ from pathlib import Path
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def _no_ollama_capability_probe(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep tests off the network: the thinking-capability probe would otherwise
+    ask a real Ollama server. Decide from the model name instead."""
+    from hlxgen import llm
+
+    monkeypatch.setattr(
+        llm,
+        "_ollama_supports_thinking",
+        lambda endpoint, model_name: llm._is_levelled_ollama_model(model_name),
+    )
+
+
 @pytest.fixture(scope="session")
 def project_root() -> Path:
     return Path(__file__).resolve().parent.parent

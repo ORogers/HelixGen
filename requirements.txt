@@ -1,6 +1,6 @@
 # Core runtime dependencies
 pyyaml>=6.0
-openai>=1.14.0
+openai>=3.15
 
 # USB device support (hlxgen devices/pull/backup/push).
 # pyusb also needs the libusb shared library: brew install libusb
