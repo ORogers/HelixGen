@@ -1,5 +1,5 @@
 """Tests for the optional `on_progress` callback added to
-`generate_chain_from_prompt` for hlxgen_ui's generation panel.
+`generate_chain_from_prompt` for helixgen_ui's generation panel.
 
 These are a regression guard as much as anything: `on_progress` must be
 purely additive, so `generate_chain_from_prompt`'s existing behaviour (and
@@ -13,8 +13,8 @@ from pathlib import Path
 
 import pytest
 
-from hlxgen.dataset import ModelCatalog
-from hlxgen.llm import LLMRequest, generate_chain_from_prompt
+from helixgen.dataset import ModelCatalog
+from helixgen.llm import LLMRequest, generate_chain_from_prompt
 
 
 def _fake_call(endpoint: str, model_name: str, llm_request: LLMRequest, **_: object) -> str:
@@ -31,7 +31,7 @@ def _fake_call(endpoint: str, model_name: str, llm_request: LLMRequest, **_: obj
 def test_on_progress_omitted_is_a_no_op(monkeypatch: pytest.MonkeyPatch, dataset_path: Path):
     """Existing (CLI) call sites that don't pass on_progress see no change."""
     catalog = ModelCatalog(dataset_path)
-    monkeypatch.setattr("hlxgen.llm._call_ollama", _fake_call)
+    monkeypatch.setattr("helixgen.llm._call_ollama", _fake_call)
 
     chain = generate_chain_from_prompt(
         prompt="clean tone",
@@ -46,7 +46,7 @@ def test_on_progress_receives_ordered_status_messages(
     monkeypatch: pytest.MonkeyPatch, dataset_path: Path
 ):
     catalog = ModelCatalog(dataset_path)
-    monkeypatch.setattr("hlxgen.llm._call_ollama", _fake_call)
+    monkeypatch.setattr("helixgen.llm._call_ollama", _fake_call)
 
     messages: list[str] = []
     generate_chain_from_prompt(
@@ -86,7 +86,7 @@ def test_on_progress_reports_cab_block_skip(
             )
         return json.dumps({"title": "Cab Test", "blocks": [cab_model.display_name]})
 
-    monkeypatch.setattr("hlxgen.llm._call_ollama", fake_call)
+    monkeypatch.setattr("helixgen.llm._call_ollama", fake_call)
 
     messages: list[str] = []
     generate_chain_from_prompt(

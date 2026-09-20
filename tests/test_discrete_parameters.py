@@ -14,8 +14,8 @@ import copy
 
 import pytest
 
-from hlxgen.dataset import DISCRETE, ModelCatalog
-from hlxgen.generator import generate_preset
+from helixgen.dataset import DISCRETE, ModelCatalog
+from helixgen.generator import generate_preset
 
 #: Device value -> label, from HX Edit's own ``sync_note`` list, which the
 #: firmware stores one-based.

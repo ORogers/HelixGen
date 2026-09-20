@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from hlxgen.device.frames import (
+from helixgen.device.frames import (
     CLOSE_ORDER,
     CMD_CHUNK,
     CMD_IDLE,

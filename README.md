@@ -1,176 +1,165 @@
-# HelixPy — `hlxgen`
+# HelixGen
 
 [![CI](https://github.com/ORogers/HelixPy/actions/workflows/ci.yml/badge.svg)](https://github.com/ORogers/HelixPy/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
-`hlxgen` is a Python command-line utility for generating, validating, and inspecting Line 6 Helix (`.hlx`) preset files. It provides a structured workflow for building presets from declarative signal-chain definitions while enforcing model and parameter correctness through a centralized dataset.
+**Describe a guitar tone in plain English. Get it on your Line 6 HX Stomp.**
+
+HelixGen turns "warm, dark jazz tone - hollowbody into a small valve amp, light
+compression, a short room reverb" into a real Helix preset, validates it
+against the full model catalog, and writes it straight into a slot on your
+pedal over USB. There is a desktop app and a command-line tool; both do the
+same thing.
+
+![The HelixGen desktop app, showing a generated signal chain](docs/images/app.png)
+
+> **This writes to your pedal.** Take a backup before the first write -
+> `helixgen backup --output ~/helix-backup` copies every slot and sends the pedal
+> nothing. Firmware, flash and DFU are out of scope and are never transmitted;
+> everything HelixGen does is recoverable.
+
+---
 
 ## Features
-- Generate schema-compliant `.hlx` presets from JSON or YAML chain descriptions.
-- Validate existing presets against a JSON schema and the bundled model catalog.
-- Inspect presets and display an ordered summary of blocks, model types, and real-world references.
-- Describe tones in natural language and have presets built automatically via either a local Ollama model or the OpenAI Responses API.
 
-## Project Layout
-- `hlxgen/` — Python package containing the CLI (`cli.py`) and supporting modules:
-  - `dataset.py` — Loads model definitions from `helix_model_information.json`.
-  - `generator.py` — Builds preset payloads from chain specs and applies defaults.
-  - `validator.py` — Lightweight schema + semantic validation engine.
-  - `inspector.py` — Renders readable tables summarizing preset contents.
-  - `io.py` — File helpers for JSON/YAML chain input.
-  - `device/` — Bridges the name-addressed catalog onto the ordinals Helix hardware
-    uses. Groundwork for direct USB upload; see `docs/usb_upload_plan.md`.
-- `helix_model_information.json` — Canonical dataset defining available Helix models and their parameters.
-- `docs/` — Functional requirements and design notes:
-  - `application_flow.md` — how the application works today, end to end.
-  - `usb_upload_plan.md` — plan, research and TODO for replacing the HX Edit
-    AppleScript upload with direct USB.
-- `tests/` — Pytest-based unit suite covering generation, validation, CLI flows, and dataset integration.
+**Generating tones**
 
-## Usage
-Install dependencies (Python 3.13+):
+- **Plain-English prompts.** "Gilmour-ish lead - Big Muff into a clean Hiwatt,
+  long dotted-eighth delay" is a valid input. Reference records, rigs and the
+  sound you are after rather than block names.
+- **The whole catalog.** All 343 HX Stomp models across 13 categories, 310 of
+  them carrying the real amp or pedal they model, so a prompt naming a rig
+  lands on the right thing.
+- **Three snapshots per tone, each a different sound.** A described tone arrives
+  as clean / crunch / lead, or rhythm / solo / ambient, rather than as one fixed
+  setting. A third model call designs them, switching blocks on and off and
+  re-dialling the parameters each one needs; `helixgen inspect` shows them side
+  by side.
+- **Two backends.** OpenAI by default - seconds per tone, better chains, a
+  fraction of a penny each. Ollama for working offline and free, with nothing
+  leaving your machine. Both offer a thinking level to trade speed for quality.
 
-```bash
-python3 -m pip install -r requirements.txt
-```
+**Getting them onto the pedal**
 
-Run the CLI directly:
+- **Direct USB upload** into a slot you choose, reading the slot back
+  afterwards to confirm the write landed. Snapshots go too: their per-block
+  states and controlled values are remapped to the slots the blocks actually
+  landed in and written as a second pass, since the device's edit operations do
+  not carry them.
+- **Browse your pedal** from the app: what each slot holds, and the signal
+  chain of any of them, read without loading the preset or moving the pedal's
+  own panel.
+- **Backups.** `helixgen backup` copies all 126 slots and sends the pedal
+  nothing; `push --archive` saves the target slot before it is overwritten.
+- **Amps carry their own cab**, the way they do on the pedal, so a chain with
+  an amp and six effects still fits in eight blocks. `--separate-cabs` if you
+  would rather it did not.
+- **Footswitches assigned for you** - three blocks get switches 1-3, drive,
+  modulation and delay chosen first - and overridable per block.
 
-```bash
-python3 -m hlxgen --dataset helix_model_information.json generate path/to/chain.json --schema helix-preset.schema.json
-python3 -m hlxgen --dataset helix_model_information.json validate FullRainbowClean.hlx --schema helix-preset.schema.json
-python3 -m hlxgen --dataset helix_model_information.json models --category Distortion
-python3 -m hlxgen inspect FullRainbowClean.hlx --dataset helix_model_information.json
-python3 -m hlxgen --dataset helix_model_information.json describe "spacious worship clean" --schema helix-preset.schema.json
-python3 -m hlxgen describe "tight prog metal rhythm" --llm-backend openai --openai-model gpt-5.6-terra --reasoning-effort low
-python3 -m hlxgen llm-models --llm-backend ollama
-```
+**Working with preset files**
 
-- `generate` expects a chain definition with an ordered `blocks` list. Optional overrides (`--name`, `--author`, `--tempo`, `--device`, `--device-id`, `--device-version`, `--app-version`, `--template`, `--output`, `--dry-run`) adjust metadata and output behavior. Defaults mirror HX Stomp numeric IDs so the resulting preset imports cleanly in HX Edit/HX Stomp.
-- Templates: generation starts from `HXTemplate.hlx` (override with `--template`) so structural metadata like snapshots, global parameters, and secondary outputs match a known-good HX Stomp export.
-- Footswitches: the first three blocks in a chain are auto-assigned to footswitches 1–3 (override per-block with `footswitch`, `footswitch_label`, etc. in the chain JSON).
-- `validate` checks structural schema compliance and verifies every block model + parameter against the dataset. Use `--report` to write JSON results.
-- `inspect` produces a simple text table summarizing the preset signal chain.
-- `models` prints a catalog of available models sourced from the dataset, optionally filtered by `--category`.
+- **Hand-authored chains** in JSON or YAML, in a short form (a title and a list
+  of model names) or a full one that reaches every parameter, footswitch,
+  snapshot and routing field.
+- **Validation before anything is written**, structurally against a JSON schema
+  and semantically against the catalog - every model real, every value in
+  range. The same gate backs a standalone `helixgen validate`.
+- **Presets that import cleanly**, built from a known-good HX Stomp export so
+  global parameters, routing and device identifiers match what HX Edit
+  expects.
+- **`helixgen inspect`** to read any `.hlx` file as an ordered signal chain, and
+  `helixgen models` to list the catalog, filtered by category.
 
-### Signal Chain Formats
+**Both ways in**
 
-`hlxgen generate` accepts two complementary specification styles:
+- **A desktop app** for the whole flow - pick a slot, describe, preview,
+  upload - with a first-run setup that takes your API key and remembers it.
+- **A command-line tool** covering the same flow, plus what the app has no
+  screen for: reading presets off the pedal, hand-authored chain files, and
+  auditing the catalog against your own HX Edit install.
 
-- **Simple format** — ideal for quick experiments or LLM output. Provide a title plus an ordered list of model display names. Optional `author` and `description` fields map directly into preset metadata.
+## Install
 
-  ```json
-  {
-    "title": "Sparkling Clean",
-    "blocks": [
-      "US Double Nrm",
-      "LA Studio Comp",
-      "Plate Reverb"
-    ]
-  }
-  ```
+**The app** - download the `.dmg` from [Releases][releases], drag HelixGen to
+Applications, then **right-click it and choose Open** the first time.
+([Why?](docs/install.md#why-macos-warns-you))
 
-- **Full format** — mirrors the internal Helix preset structure. You can override `meta`, `global`, `input`, `output`, individual block settings, footswitch assignments, and more. Any omitted values fall back to defaults pulled from the template and dataset.
+[releases]: https://github.com/ORogers/HelixPy/releases
 
-  ```json
-  {
-    "meta": {
-      "name": "Basic Clean Patch",
-      "author": "Example"
-    },
-    "global": { "@tempo": 120.0 },
-    "input": { "@model": "HelixStomp_AppDSPFlowInput", "@input": 1 },
-    "output": { "@model": "HelixStomp_AppDSPFlowOutputMain", "@output": 1 },
-    "blocks": [
-      {
-        "model": "US Double Nrm",
-        "parameters": {
-          "Drive": 0.45,
-          "Bass": 0.5,
-          "Treble": 0.6
-        }
-      },
-      {
-        "model": "Plate Reverb",
-        "parameters": {
-          "Decay": 0.4,
-          "Mix": 0.25
-        }
-      }
-    ]
-  }
-  ```
-
-- **Snapshots** - either format may add a `snapshots` list (up to three on HX Stomp). Each snapshot has a `name` (10 characters max on the device) and a `blocks` map, keyed by the block's zero-based index, of what it changes: `enabled` to switch a block on or off and `parameters` to re-dial it. Anything a snapshot does not mention keeps the block's own settings. See `docs/examples/snapshots_chain.json`.
-
-  ```json
-  "snapshots": [
-    {"name": "Clean", "blocks": {"1": {"enabled": false}, "2": {"parameters": {"Drive": 0.2}}}},
-    {"name": "Rhythm"},
-    {"name": "Solo", "blocks": {"4": {"enabled": true, "parameters": {"Mix": 0.3}}}}
-  ]
-  ```
-
-Both formats can be expressed as JSON or YAML. During generation, simple strings are expanded into structured blocks with validated parameter defaults. See `docs/examples/` for additional templates.
-
-### Describe Command & LLM Prompting
-
-The `describe` subcommand converts a natural-language tone request into a preset with three LLM calls, whatever the length of the chain:
-
-1. **Block selection.** The prompt carries the signal-chain rules, two few-shot examples built from real catalog names, and the whole catalog as one `name - based on` line per model, grouped by category. The user's request comes last, so the static prefix can be reused from the backend's prompt cache.
-2. **Parameters.** One call sets every block at once (cabs keep their defaults), so the model can balance gain and levels across the chain. Blocks are keyed by position, and `null` keeps a parameter at its default.
-3. **Snapshots.** One call designs the preset's three snapshots, so a described tone arrives as three distinct usable sounds (clean / crunch / lead, rhythm / solo / ambient, and so on) rather than one fixed setting. Each snapshot switches blocks on or off and re-dials the parameters it needs; `null` leaves a block as it is. `hlxgen inspect` shows the snapshots side by side.
-
-Each answer is constrained to a JSON schema: only catalog model names, and only in-range values and listed option labels, are admissible. An answer that is still rejected is asked again once, with the reason attached, before the run fails.
-
-You can pick between two providers:
-
-- `--llm-backend ollama` *(default)* - sends prompts to a locally hosted Ollama server via `--ollama-endpoint` and `--ollama-model`. `--num-ctx` sets the context window (default 32768, raised automatically when a prompt would not fit). The model is kept loaded for 30 minutes between runs.
-- `--llm-backend openai` - uses the OpenAI Responses API with `gpt-5.6-sol`, `gpt-5.6-terra` *(default)* or `gpt-5.6-luna`. Set `OPENAI_API_KEY` in your environment (it can be read automatically from a `.env` file in the project tree).
-
-`--reasoning-effort` (`none`, `low` *(default)*, `medium`, `high`, `xhigh`, `max`) sets how long the model thinks before answering; lower is faster. Ollama models support fewer levels (gpt-oss: `low` to `high`), and the nearest supported one is used. `hlxgen llm-models` lists the models and their levels. The desktop UI (`python -m hlxgen_ui`) offers the same choices on its Settings page.
-
-## Testing
-Unit tests are written with `pytest`:
+**The command line**
 
 ```bash
-python3 -m pip install pytest
-python3 -m pytest -q
+pipx install 'helixgen[usb]'   # plus: brew install libusb
 ```
 
-Tests rely on `helix_model_information.json`; ensure it is present in the project root before running the suite.
+You will also need **HX Edit** installed to reach the pedal, and an
+**OpenAI API key** to generate anything - the app asks for one the first time
+it opens, and saves it. Prefer to stay offline? **Ollama** works too, free and
+locally. [Full setup →](docs/guide.md#1-what-you-need)
 
-### Continuous Integration
+## Try it
 
-`.github/workflows/ci.yml` runs on every push to `main` and on every pull request:
+```bash
+helixgen backup --output ~/helix-backup          # once, before anything else
+helixgen describe "spacious ambient clean, long decay"
+helixgen describe "tight prog metal rhythm" --upload --upload-via usb --slot 4
+```
 
-- **tests** — the pytest suite on Python 3.13.
-- **cli round-trip** — generates and validates every chain in `docs/examples/`, guarding the acceptance criteria in the requirements doc.
-- **lint** — `ruff check` against the rule set pinned in `ruff.toml`. Both the ruff version and the rule selection are pinned so a ruff release cannot fail CI on its own; bump them together.
+Or open the app, pick a slot, type what you want, press Generate.
 
-## Direct USB Upload
+**[Read the guide →](docs/guide.md)**
 
-`hlxgen push tone.hlx --slot N` writes a preset straight to the pedal over USB, and
-`pull` / `backup` read presets off it. The chain, each block's values and bypass
-state, the footswitch layout and the snapshots all transfer, including the knob
-positions each snapshot recalls. Only the snapshot controller is written: a preset
-that assigns an expression pedal or a footswitch to a parameter reports those as
-unwritten. `--upload-via applescript` keeps the old HX Edit GUI automation as a
-fallback.
+## How it works
 
-`hlxgen device-audit --symbols <path to Helix.sym>` reconciles the model catalog
-against HX Edit's symbol table, which is the lookup the device's ordinal addressing
-needs. `Helix.sym` is Line 6's file and is not distributed here — copy it from your
-own HX Edit installation (`find "/Applications/HX Edit.app" -name "Helix.sym"`). It
-is gitignored.
+A tone request becomes a preset in three model calls, however long the chain:
 
-See `docs/usb_upload_plan.md` for the protocol research, the chosen approach, and
-the remaining work.
+1. **Blocks.** The prompt carries the signal-chain rules, two worked examples,
+   and the whole catalog as one `name - based on` line per model. The model
+   picks the chain.
+2. **Parameters.** A second call sets every block at once, so gain and levels
+   are balanced across the chain rather than block by block.
+3. **Snapshots.** A third designs the preset's three snapshots, switching blocks
+   on or off and re-dialling what each one needs.
 
-## Requirements Reference
-Functional requirements are documented in `docs/hlxgen_functional_requirements.md`. The implementation and tests align with:
-- Capturing model metadata exclusively from the dataset.
-- Enforcing schema validation before writing presets.
-- Providing inspection output for quick signal-chain review.
+Every answer is constrained to a JSON schema built from the catalog: only real
+model names, only in-range values, only listed option labels. Anything still
+wrong is re-asked once with the reason attached, and the assembled preset is
+validated against the schema *and* the catalog before a byte reaches disk.
 
-## Status
-The core modules, CLI wiring, and unit tests are under active development. See open issues or TODO markers in source files for remaining work, such as completing the schema definition and expanding model coverage.
+Uploading uses a reverse-engineered USB protocol that writes into a chosen slot
+and reads back to confirm. [The full trace →](docs/application_flow.md)
+
+## Supported hardware
+
+| | |
+| --- | --- |
+| **HX Stomp** | Verified. This is what it was built and tested against. |
+| Other Helix / HX devices | Untested. The protocol should be the same, but nobody has confirmed it. |
+
+If you have another unit, [a device report](https://github.com/ORogers/HelixPy/issues/new/choose)
+is genuinely useful - including one that just says it worked.
+
+## Documentation
+
+| | |
+| --- | --- |
+| [Guide](docs/guide.md) | Install, first tone, writing good prompts, troubleshooting. |
+| [CLI reference](docs/cli.md) | Every command and flag. |
+| [Application flow](docs/application_flow.md) | How it works, end to end. |
+| [USB protocol](docs/usb_protocol.md) | How the device support works: transport, document format, writing. |
+| [Legal](docs/legal.md) | Trademarks, and which data files are and are not distributed. |
+| [Contributing](CONTRIBUTING.md) | Setup, the checks CI runs, house rules. |
+
+## Licence and attribution
+
+Apache-2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
+
+Helix, HX Stomp, HX Edit and Line 6 are trademarks of Yamaha Guitar Group /
+Line 6. This project is independent and unaffiliated; it contains no Line 6
+source, firmware or SDK, and does not redistribute Line 6's data files.
+[The full statement →](docs/legal.md)
+
+Much of the protocol work is distilled from
+[**fretwire**](https://github.com/john-baxter-dev/fretwire), whose living
+protocol and preset-format specs did the hard part first.

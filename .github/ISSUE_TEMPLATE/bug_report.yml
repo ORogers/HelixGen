@@ -1,0 +1,55 @@
+name: Bug report
+description: Something does not work the way it should
+labels: [bug]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what you got instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: How to reproduce
+      description: >
+        The command you ran, or the steps you took in the app. If a chain or
+        preset file is involved, paste it or attach it.
+      render: shell
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: HelixGen version
+      description: "`helixgen --version`, or the commit you are on."
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install
+    attributes:
+      label: How did you install it?
+      options:
+        - pip / pipx
+        - The .dmg
+        - From a git clone
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: macOS version
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: hardware
+    attributes:
+      label: Was a device involved?
+      options:
+        - label: This happened while talking to a pedal (please also fill in a device report)

@@ -6,7 +6,7 @@ from urllib import error as url_error
 
 import pytest
 
-from hlxgen import cli
+from helixgen import cli
 
 
 def _write_chain(path: Path, chain: dict[str, object]) -> None:
@@ -250,7 +250,7 @@ def test_cli_describe_generates_from_prompt(
     preset_path = tmp_path / "prompted.hlx"
 
     monkeypatch.setattr(
-        "hlxgen.llm.request.urlopen",
+        "helixgen.llm.request.urlopen",
         _fake_ollama(
             {"title": "Prompted Tone", "blocks": ["Horizon Drive"]},
             {"Drive": 0.6},
@@ -262,6 +262,8 @@ def test_cli_describe_generates_from_prompt(
             "--dataset",
             str(dataset_path),
             "describe",
+            "--llm-backend",
+            "ollama",
             "Warm fuzzy lead sound",
             "--schema",
             str(schema_path),
@@ -295,10 +297,10 @@ def test_cli_describe_upload_runs_script(
     script_path.write_text("-- dummy", encoding="utf-8")
 
     monkeypatch.setattr(
-        "hlxgen.llm.request.urlopen",
+        "helixgen.llm.request.urlopen",
         _fake_ollama({"title": "Upload Tone", "blocks": ["Horizon Drive"]}),
     )
-    monkeypatch.setattr("hlxgen.cli.sys.platform", "darwin")
+    monkeypatch.setattr("helixgen.cli.sys.platform", "darwin")
 
     captured_args: dict[str, Any] = {}
 
@@ -307,13 +309,15 @@ def test_cli_describe_upload_runs_script(
         captured_args["preset"] = preset
         captured_args["mode"] = mode
 
-    monkeypatch.setattr("hlxgen.cli._upload_via_script", fake_upload)
+    monkeypatch.setattr("helixgen.cli._upload_via_script", fake_upload)
 
     exit_code = cli.main(
         [
             "--dataset",
             str(dataset_path),
             "describe",
+            "--llm-backend",
+            "ollama",
             "Warm fuzzy lead sound",
             "--schema",
             str(schema_path),
@@ -349,7 +353,7 @@ def test_cli_describe_default_output_directory(
     generated_dir = tmp_path / "generated-presets"
 
     monkeypatch.setattr(
-        "hlxgen.llm.request.urlopen",
+        "helixgen.llm.request.urlopen",
         _fake_ollama({"title": "Prompted Tone", "blocks": ["Horizon Drive"]}),
     )
     monkeypatch.chdir(tmp_path)
@@ -359,6 +363,8 @@ def test_cli_describe_default_output_directory(
             "--dataset",
             str(dataset_path),
             "describe",
+            "--llm-backend",
+            "ollama",
             "Warm fuzzy lead sound",
             "--schema",
             str(schema_path),
@@ -395,13 +401,15 @@ def test_cli_describe_reports_invalid_llm_json(
 
         return _Response()
 
-    monkeypatch.setattr("hlxgen.llm.request.urlopen", fake_urlopen)
+    monkeypatch.setattr("helixgen.llm.request.urlopen", fake_urlopen)
 
     exit_code = cli.main(
         [
             "--dataset",
             str(dataset_path),
             "describe",
+            "--llm-backend",
+            "ollama",
             "Give me something impossible",
             "--schema",
             str(schema_path),
@@ -447,13 +455,15 @@ def test_cli_describe_reports_array_response(
 
         return _Response()
 
-    monkeypatch.setattr("hlxgen.llm.request.urlopen", fake_urlopen)
+    monkeypatch.setattr("helixgen.llm.request.urlopen", fake_urlopen)
 
     exit_code = cli.main(
         [
             "--dataset",
             str(dataset_path),
             "describe",
+            "--llm-backend",
+            "ollama",
             "clean tone",
             "--schema",
             str(schema_path),
@@ -484,13 +494,15 @@ def test_cli_describe_reports_http_error(
             fp=io.BytesIO(b""),
         )
 
-    monkeypatch.setattr("hlxgen.llm.request.urlopen", fake_urlopen)
+    monkeypatch.setattr("helixgen.llm.request.urlopen", fake_urlopen)
 
     exit_code = cli.main(
         [
             "--dataset",
             str(dataset_path),
             "describe",
+            "--llm-backend",
+            "ollama",
             "Play me a crunchy rhythm",
             "--schema",
             str(schema_path),
@@ -506,6 +518,29 @@ def test_cli_describe_reports_http_error(
     assert "/api/generate" in captured.err
 
 
+def test_hx_edit_flag_rejects_a_path_that_is_not_an_install(
+    tmp_path: Path, capsys: pytest.CaptureFixture
+) -> None:
+    """Told at the front door, not several layers down in a USB write."""
+    with pytest.raises(SystemExit) as excinfo:
+        cli.main(["--hx-edit", str(tmp_path), "models"])
+
+    assert excinfo.value.code == 2
+    assert "does not look like an HX Edit install" in capsys.readouterr().err
+
+
+def test_hx_edit_flag_points_the_discovery_at_a_chosen_install(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from helixgen.device import hxedit
+
+    resources = tmp_path / "HX Edit.app" / "Contents" / "Resources"
+    resources.mkdir(parents=True)
+    (resources / "Helix.sym").write_text("[]", encoding="utf-8")
+    monkeypatch.delenv(hxedit.HX_EDIT_ENV_VAR, raising=False)
+
+    assert cli.main(["--hx-edit", str(tmp_path / "HX Edit.app"), "models"]) == 0
+    assert hxedit.find_hx_edit() == tmp_path / "HX Edit.app"
 def test_cli_describe_writes_three_snapshots(
     tmp_path: Path,
     dataset_path: Path,
@@ -517,7 +552,7 @@ def test_cli_describe_writes_three_snapshots(
     """The whole describe path, from the LLM's answer to snapshots in the file."""
     preset_path = tmp_path / "snapshots.hlx"
     monkeypatch.setattr(
-        "hlxgen.llm.request.urlopen",
+        "helixgen.llm.request.urlopen",
         _fake_ollama(
             {"title": "Three Ways", "blocks": ["Horizon Drive", "Brit Plexi Brt", "Glitz"]},
             {"Drive": 0.4},
@@ -539,6 +574,7 @@ def test_cli_describe_writes_three_snapshots(
         [
             "--dataset", str(dataset_path),
             "describe", "Versatile rock",
+            "--llm-backend", "ollama",
             "--schema", str(schema_path),
             "--template", str(template_path),
             "--output", str(preset_path),

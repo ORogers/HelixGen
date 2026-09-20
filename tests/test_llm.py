@@ -4,8 +4,8 @@ from typing import Any, ClassVar
 
 import pytest
 
-from hlxgen.dataset import ModelCatalog
-from hlxgen.llm import (
+from helixgen.dataset import ModelCatalog
+from helixgen.llm import (
     _FEWSHOT_EXAMPLES,
     DEFAULT_OPENAI_MODEL,
     OPENAI_MODELS,
@@ -60,7 +60,7 @@ def _install_fake_ollama(
             answer = fallbacks.get(llm_request.schema_name, {"blocks": {}})
         return answer if isinstance(answer, str) else json.dumps(answer)
 
-    monkeypatch.setattr("hlxgen.llm._call_ollama", fake_call)
+    monkeypatch.setattr("helixgen.llm._call_ollama", fake_call)
     return calls
 
 
@@ -380,7 +380,7 @@ def test_openai_offers_only_the_gpt_5_6_family():
 
 
 def test_openai_rejects_models_outside_the_offered_list(monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setattr("hlxgen.llm._get_openai_client", lambda: object())
+    monkeypatch.setattr("helixgen.llm._get_openai_client", lambda: object())
 
     with pytest.raises(LLMGenerationError, match="not supported"):
         _build_llm_caller(
@@ -398,7 +398,7 @@ def test_list_llm_models_reads_installed_ollama_models(monkeypatch: pytest.Monke
         seen.append(url)
         return {"models": [{"name": "llama3.2:latest"}, {"name": "gpt-oss:20b"}]}
 
-    monkeypatch.setattr("hlxgen.llm._ollama_request", fake_request)
+    monkeypatch.setattr("helixgen.llm._ollama_request", fake_request)
 
     assert list_llm_models("ollama", "http://host:11434/api/generate") == [
         "gpt-oss:20b",
@@ -414,8 +414,8 @@ def test_generate_chain_with_openai_backend(
     fake_client = object()
     seen: set[tuple[str, str]] = set()
 
-    monkeypatch.setattr("hlxgen.llm._OPENAI_CLIENT", None, raising=False)
-    monkeypatch.setattr("hlxgen.llm._get_openai_client", lambda: fake_client)
+    monkeypatch.setattr("helixgen.llm._OPENAI_CLIENT", None, raising=False)
+    monkeypatch.setattr("helixgen.llm._get_openai_client", lambda: fake_client)
 
     def fake_call_openai(
         model_name: str, llm_request: LLMRequest, *, effort: str, client: Any | None = None
@@ -428,7 +428,7 @@ def test_generate_chain_with_openai_backend(
             return json.dumps(_default_snapshots())
         return json.dumps({"title": "AI Tone", "blocks": ["Horizon Drive"]})
 
-    monkeypatch.setattr("hlxgen.llm._call_openai", fake_call_openai)
+    monkeypatch.setattr("helixgen.llm._call_openai", fake_call_openai)
 
     chain = generate_chain_from_prompt(
         prompt="describe via openai",

@@ -21,10 +21,10 @@ jobs:
     name: tests
     runs-on: ubuntu-latest
     env:
-      # hlxgen_ui's PySide6 tests need a Qt platform plugin; there's no
+      # helixgen_ui's PySide6 tests need a Qt platform plugin; there's no
       # display on this runner, so run headless. Set globally (not just in
       # tests/ui/conftest.py) so it also covers any ad-hoc `python -m
-      # hlxgen_ui` invocation in this job.
+      # helixgen_ui` invocation in this job.
       QT_QPA_PLATFORM: offscreen
     steps:
       - uses: actions/checkout@v4
@@ -33,11 +33,11 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
-          cache-dependency-path: requirements.txt
+          cache-dependency-path: pyproject.toml
 
       # PySide6 (Qt) needs a handful of shared libraries this base image
       # doesn't ship, even to run headless; pyusb needs libusb's runtime.
-      # Neither is needed by the plain hlxgen CLI itself.
+      # Neither is needed by the plain helixgen CLI itself.
       - name: Install system libraries for PySide6 and pyusb
         run: |
           sudo apt-get update
@@ -47,7 +47,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt
+          python -m pip install -e '.[dev]'
 
       - name: Run tests
         run: python -m pytest -q
@@ -62,14 +62,26 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
-          cache-dependency-path: requirements.txt
+          cache-dependency-path: pyproject.toml
 
-      - name: Install dependencies
+      # Installs the built package rather than the checkout, so the round trip
+      # below exercises exactly what a user gets from `pip install helixgen`.
+      - name: Install the package
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt
+          python -m pip install .
 
-      # Guards the acceptance criteria in docs/hlxgen_functional_requirements.md:
+      # The data files travel inside the package now, so nothing below passes a
+      # --dataset, --schema or --template. Running from a directory that is not
+      # the checkout is the point: it is what catches a path that silently
+      # resolved against the working directory.
+      - name: Generate and validate from outside the checkout
+        working-directory: ${{ runner.temp }}
+        run: |
+          helixgen --help > /dev/null
+          helixgen models --category Reverb | head -3
+
+      # Guards the acceptance criteria in docs/helixgen_functional_requirements.md:
       # every bundled chain must generate a preset that passes validation.
       - name: Generate and validate every example chain
         run: |
@@ -77,15 +89,13 @@ jobs:
           for chain in docs/examples/*.json; do
             preset="ci-out/$(basename "${chain%.json}").hlx"
             echo "::group::$chain"
-            python -m hlxgen generate "$chain" --output "$preset"
-            python -m hlxgen validate "$preset"
+            helixgen generate "$chain" --output "$preset"
+            helixgen validate "$preset"
             echo "::endgroup::"
           done
 
       - name: Exercise read-only commands
-        run: |
-          python -m hlxgen inspect ci-out/basic_chain.hlx
-          python -m hlxgen models --category Reverb
+        run: helixgen inspect ci-out/basic_chain.hlx
 
   lint:
     name: lint
@@ -102,4 +112,39 @@ jobs:
       - run: python -m pip install ruff==0.16.7
 
       - name: Ruff
-        run: python -m ruff check hlxgen/ hlxgen_ui/ tests/
+        run: python -m ruff check helixgen/ helixgen_ui/ tests/
+
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - run: python -m pip install build twine
+
+      # A wheel that is missing helix_model_information.json installs cleanly
+      # and then fails on first use, so check the data files are actually in it.
+      - name: Build and check the distributions
+        run: |
+          python -m build
+          python -m twine check dist/*
+          python - <<'EOF'
+          import pathlib, zipfile
+          wheel = next(pathlib.Path("dist").glob("*.whl"))
+          names = set(zipfile.ZipFile(wheel).namelist())
+          required = {
+              "helixgen/data/helix_model_information.json",
+              "helixgen/data/helix-preset.schema.json",
+              "helixgen/data/HXTemplate.hlx",
+              "helixgen/data/import_helix_preset.applescript",
+              "helixgen_ui/style.qss",
+          }
+          missing = sorted(required - names)
+          if missing:
+              raise SystemExit(f"{wheel.name} is missing: {missing}")
+          print(f"{wheel.name} carries every data file")
+          EOF

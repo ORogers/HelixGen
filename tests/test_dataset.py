@@ -1,4 +1,4 @@
-from hlxgen.dataset import ModelCatalog
+from helixgen.dataset import ModelCatalog
 
 # Line 6 internal model names carry the block family as a prefix, so the
 # category in helix_model_information.json can be checked against it. Categories

@@ -1,0 +1,134 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Tag to build (for a dry run; nothing is published)
+        required: false
+
+permissions:
+  contents: write
+
+env:
+  PYTHON_VERSION: "3.13"
+
+jobs:
+  distributions:
+    name: wheel and sdist
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - run: python -m pip install build twine
+
+      - run: python -m build
+
+      - run: python -m twine check dist/*
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: distributions
+          path: dist/*
+
+  app:
+    name: macOS app
+    # arm64. An Intel build would need its own job and its own runner; nobody
+    # has asked for one.
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      # pyusb loads libusb through ctypes at run time and the spec copies it
+      # into the bundle, so it has to exist on the builder even though the
+      # published app does not need Homebrew.
+      - name: Install libusb
+        run: brew install libusb
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install '.[ui]' pyinstaller
+
+      - name: Build HelixGen.app
+        run: pyinstaller packaging/HelixGen.spec --noconfirm
+
+      # A bundle missing a data file launches perfectly well and then fails the
+      # first time someone asks it for anything. This loads them.
+      - name: Check the bundle is intact
+        run: dist/HelixGen.app/Contents/MacOS/HelixGen --selftest
+
+      - name: Build the disk image
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          STAGE="$(mktemp -d)/HelixGen"
+          mkdir -p "$STAGE"
+          cp -R dist/HelixGen.app "$STAGE/"
+          ln -s /Applications "$STAGE/Applications"
+          cp README.md "$STAGE/README.md"
+          mkdir -p dmg
+          hdiutil create -volname "HelixGen $VERSION" \
+            -srcfolder "$STAGE" -ov -format UDZO \
+            "dmg/HelixGen-$VERSION.dmg"
+
+      # TODO: signing and notarisation. Until then macOS shows an unidentified
+      # developer warning, which docs/install.md explains. Adding it needs a
+      # paid Apple Developer account and three secrets - the Developer ID
+      # certificate and its password, and an app-specific password for
+      # notarytool - after which this is two steps (codesign --deep --options
+      # runtime, then xcrun notarytool submit --wait and xcrun stapler staple)
+      # and no redesign.
+
+      - name: Checksums
+        run: |
+          cd dmg
+          shasum -a 256 ./*.dmg > SHA256SUMS
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-app
+          path: dmg/*
+
+  publish:
+    name: publish
+    needs: [distributions, app]
+    runs-on: ubuntu-latest
+    # A manual run builds and checks everything but publishes nothing, so the
+    # release path can be exercised without cutting a release.
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Publish the release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/distributions/*
+            artifacts/macos-app/*
+          generate_release_notes: true
+          body: |
+            ## Installing
+
+            **The app** - download the `.dmg`, drag HelixGen to Applications,
+            then **right-click it and choose Open** the first time. It is not
+            signed with an Apple Developer ID, so macOS asks; see
+            [docs/install.md](https://github.com/ORogers/HelixPy/blob/main/docs/install.md#why-macos-warns-you).
+
+            **The command line** - `pipx install 'helixgen[usb]'`.
+
+            `SHA256SUMS` covers the disk image.
+
+            > Talking to a pedal needs HX Edit installed, and writing to one
+            > overwrites the slot. Take a backup first: `helixgen backup --output ~/helix-backup`.

@@ -1,7 +1,7 @@
 {
   "meta": {
     "name": "Three Snapshot Rock",
-    "author": "hlxgen"
+    "author": "helixgen"
   },
   "blocks": [
     {"model": "LA Studio Comp", "parameters": {"PeakReduction": 0.4, "Mix": 0.6}},

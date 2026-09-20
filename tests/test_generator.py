@@ -2,8 +2,8 @@ import copy
 
 import pytest
 
-from hlxgen.dataset import ModelCatalog, ModelCatalogError
-from hlxgen.generator import SNAPSHOT_CONTROLLER, generate_preset
+from helixgen.dataset import ModelCatalog, ModelCatalogError
+from helixgen.generator import SNAPSHOT_CONTROLLER, generate_preset
 
 
 def test_generate_preset_applies_defaults_and_overrides(dataset_path, horizon_chain, template_data):

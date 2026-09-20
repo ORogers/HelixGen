@@ -3,12 +3,27 @@ from pathlib import Path
 
 import pytest
 
+from helixgen import resources
+
+
+@pytest.fixture(autouse=True)
+def _isolated_config(tmp_path_factory, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep every test off the real config file.
+
+    It now holds the user's own backend choice and their OpenAI key, so a test
+    reading it would pass or fail differently on every machine, and one writing
+    it would overwrite someone's settings.
+    """
+    monkeypatch.setenv(
+        "HELIXGEN_CONFIG_DIR", str(tmp_path_factory.mktemp("config"))
+    )
+
 
 @pytest.fixture(autouse=True)
 def _no_ollama_capability_probe(monkeypatch: pytest.MonkeyPatch) -> None:
     """Keep tests off the network: the thinking-capability probe would otherwise
     ask a real Ollama server. Decide from the model name instead."""
-    from hlxgen import llm
+    from helixgen import llm
 
     monkeypatch.setattr(
         llm,
@@ -18,24 +33,18 @@ def _no_ollama_capability_probe(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(scope="session")
-def project_root() -> Path:
-    return Path(__file__).resolve().parent.parent
+def dataset_path() -> Path:
+    """The real model catalog, from wherever helixgen is installed.
+
+    Resolved through ``helixgen.resources`` rather than the repo root, so the
+    suite passes against an installed wheel exactly as it does in a clone.
+    """
+    return resources.dataset_path()
 
 
 @pytest.fixture(scope="session")
-def dataset_path(project_root: Path) -> Path:
-    path = project_root / "helix_model_information.json"
-    if not path.exists():
-        pytest.skip("helix_model_information.json not available")
-    return path
-
-
-@pytest.fixture(scope="session")
-def template_path(project_root: Path) -> Path:
-    path = project_root / "HXTemplate.hlx"
-    if not path.exists():
-        pytest.skip("HXTemplate.hlx not available")
-    return path
+def template_path() -> Path:
+    return resources.template_path()
 
 
 @pytest.fixture(scope="session")
@@ -97,3 +106,25 @@ def horizon_chain() -> dict[str, object]:
             }
         ],
     }
+
+
+@pytest.fixture(autouse=True)
+def _no_live_llm_calls(monkeypatch: pytest.MonkeyPatch) -> None:
+    """No test may reach a real backend, whichever one is the default.
+
+    When OpenAI became the default, four tests that stub Ollama's HTTP call
+    silently started talking to the real API - and on a machine with a key in
+    its environment, one of them passed by spending money. A default is not
+    something the suite should be able to notice.
+    """
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setattr("helixgen.llm.openai_api_key", lambda: None)
+
+    def _refuse(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError(
+            "A test tried to reach the OpenAI API. Stub the backend, or pass "
+            "--llm-backend ollama if the test is about the Ollama path."
+        )
+
+    monkeypatch.setattr("helixgen.llm._get_openai_client", _refuse)
+    monkeypatch.setattr("helixgen.llm.verify_openai_api_key", _refuse)
