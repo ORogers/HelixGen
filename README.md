@@ -30,9 +30,11 @@ same thing.
 - **The whole catalog.** All 343 HX Stomp models across 13 categories, 310 of
   them carrying the real amp or pedal they model, so a prompt naming a rig
   lands on the right thing.
-- **Nothing invented.** Both model calls are constrained to a JSON schema built
-  from the catalog: only real model names, only in-range values, only listed
-  option labels. A rejected answer is re-asked once with the reason attached.
+- **Three snapshots per tone, each a different sound.** A described tone arrives
+  as clean / crunch / lead, or rhythm / solo / ambient, rather than as one fixed
+  setting. A third model call designs them, switching blocks on and off and
+  re-dialling the parameters each one needs; `helixgen inspect` shows them side
+  by side.
 - **Two backends.** OpenAI by default - seconds per tone, better chains, a
   fraction of a penny each. Ollama for working offline and free, with nothing
   leaving your machine. Both offer a thinking level to trade speed for quality.
@@ -40,7 +42,10 @@ same thing.
 **Getting them onto the pedal**
 
 - **Direct USB upload** into a slot you choose, reading the slot back
-  afterwards to confirm the write landed.
+  afterwards to confirm the write landed. Snapshots go too: their per-block
+  states and controlled values are remapped to the slots the blocks actually
+  landed in and written as a second pass, since the device's edit operations do
+  not carry them.
 - **Browse your pedal** from the app: what each slot holds, and the signal
   chain of any of them, read without loading the preset or moving the pedal's
   own panel.
@@ -60,13 +65,6 @@ same thing.
 - **Validation before anything is written**, structurally against a JSON schema
   and semantically against the catalog - every model real, every value in
   range. The same gate backs a standalone `helixgen validate`.
-- **Three snapshots per tone, each a different sound.** A described tone arrives
-  as clean / crunch / lead, or rhythm / solo / ambient - a third model call
-  designs them, switching blocks on and off and re-dialling the parameters each
-  one needs. `helixgen inspect` shows them side by side. On upload the per-block
-  states and snapshot-controlled values are remapped to the slots the blocks
-  actually ended up in and written separately, because the device's edit
-  operations do not carry them.
 - **Presets that import cleanly**, built from a known-good HX Stomp export so
   global parameters, routing and device identifiers match what HX Edit
   expects.
@@ -124,7 +122,7 @@ A tone request becomes a preset in three model calls, however long the chain:
 3. **Snapshots.** A third designs the preset's three snapshots, switching blocks
    on or off and re-dialling what each one needs.
 
-Both answers are constrained to a JSON schema built from the catalog: only real
+Every answer is constrained to a JSON schema built from the catalog: only real
 model names, only in-range values, only listed option labels. Anything still
 wrong is re-asked once with the reason attached, and the assembled preset is
 validated against the schema *and* the catalog before a byte reaches disk.
