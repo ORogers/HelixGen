@@ -12,8 +12,7 @@ from hlxgen_ui.settings import Settings
 @pytest.fixture(autouse=True)
 def _no_key(monkeypatch: pytest.MonkeyPatch) -> None:
     """No key anywhere, whatever the machine running the tests has."""
-    monkeypatch.setattr("hlxgen_ui.main_window.openai_api_key", lambda: None)
-    monkeypatch.setattr("hlxgen_ui.widgets.settings_page.openai_api_key", lambda: None)
+    monkeypatch.setattr(llm, "openai_api_key", lambda: None)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
 
 
@@ -44,7 +43,7 @@ def test_choosing_ollama_is_remembered_and_setup_does_not_return(qtbot):
 
 
 def test_setup_is_skipped_when_a_key_is_already_set(qtbot, monkeypatch):
-    monkeypatch.setattr("hlxgen_ui.main_window.openai_api_key", lambda: "sk-test")
+    monkeypatch.setattr(llm, "openai_api_key", lambda: "sk-test")
 
     window = MainWindow()
     qtbot.addWidget(window)

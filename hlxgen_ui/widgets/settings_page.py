@@ -27,12 +27,12 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from hlxgen import llm
 from hlxgen.device import hxedit
 from hlxgen.llm import (
     OPENAI_MODELS,
     REASONING_EFFORTS,
     nearest_reasoning_effort,
-    openai_api_key,
     store_openai_api_key,
     supported_reasoning_efforts,
 )
@@ -327,7 +327,7 @@ class SettingsPage(QWidget):
                 missing=False,
             )
             return
-        if openai_api_key():
+        if llm.openai_api_key():
             self._show_key_status("A key is saved on this machine.", missing=False)
             return
         self._show_key_status(
@@ -382,7 +382,7 @@ class SettingsPage(QWidget):
     def _on_key_rejected(self, message: str) -> None:
         self._test_key.setEnabled(True)
         self._show_key_status(message, missing=True)
-        self.api_key_changed.emit(bool(openai_api_key()))
+        self.api_key_changed.emit(bool(llm.openai_api_key()))
 
     # -- HX Edit --------------------------------------------------------
 

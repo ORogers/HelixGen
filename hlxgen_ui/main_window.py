@@ -23,10 +23,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from hlxgen import llm
 from hlxgen.cli import DEFAULT_DATASET
 from hlxgen.dataset import ModelCatalog
 from hlxgen.device import hxedit
-from hlxgen.llm import openai_api_key
 
 from .device import chain_from_preset
 from .generation import GenerationOptions, GenerationResult
@@ -175,7 +175,7 @@ class MainWindow(QMainWindow):
         so the page does not reappear for someone who deliberately declined to
         enter a key.
         """
-        return self._settings.backend == "openai" and openai_api_key() is None
+        return self._settings.backend == "openai" and llm.openai_api_key() is None
 
     def _show_setup(self) -> None:
         self._pages.setCurrentIndex(self._SETUP)

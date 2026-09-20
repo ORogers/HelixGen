@@ -23,3 +23,17 @@ def hx_edit_installed(tmp_path_factory, monkeypatch):
     (bundle / "Contents" / "Resources" / "Helix.sym").write_text("[]", encoding="utf-8")
     monkeypatch.setattr(hxedit, "find_hx_edit", lambda explicit=None: bundle)
     return bundle
+
+
+@pytest.fixture(autouse=True)
+def openai_key_available(monkeypatch):
+    """Pretend an OpenAI key is set, whatever the machine running the tests has.
+
+    Without one the window opens on the first-run setup page instead of the
+    workspace, so a suite that inherits the machine's key passes locally - the
+    developer has a .env - and fails on a runner, which is exactly what
+    happened. Tests about the missing case override this.
+    """
+    from hlxgen import llm
+
+    monkeypatch.setattr(llm, "openai_api_key", lambda: "sk-test-fixture")
